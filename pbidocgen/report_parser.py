@@ -1,0 +1,360 @@
+"""Parse a PBIR-format report folder (the enhanced *.Report folder produced
+when Power BI Desktop saves a project with the PBIR preview format).
+
+Expected layout (only what exists is read; everything is optional):
+
+    MyReport.Report/
+      definition/
+        report.json                  <- report-level filters
+        pages/
+          pages.json                 <- page order / active page
+          <PageId>/
+            page.json                <- page name, visibility, page filters
+            visuals/
+              <VisualId>/
+                visual.json          <- visual type, position, field bindings
+        bookmarks/
+          *.bookmark.json
+
+Field bindings and filters are extracted by recursively walking the JSON for
+the query-expression shapes PBIR uses:
+
+    {"Column":  {"Expression": {"SourceRef": {"Entity"|"Source": ...}}, "Property": "..."}}
+    {"Measure": {...same...}}
+    {"HierarchyLevel"| "Aggregation": ... }
+
+SourceRef.Source values are aliases declared in "from"/"Entities" lists; an
+alias map is built per file and resolved before emitting references.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+
+def _load(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        try:
+            return json.loads(path.read_text(encoding="utf-16"))
+        except Exception:
+            return None
+
+
+# --------------------------------------------------------------------------
+# Recursive extraction helpers
+# --------------------------------------------------------------------------
+
+_FIELD_KINDS = ("Column", "Measure", "HierarchyLevel", "Aggregation")
+
+
+def _collect_aliases(node, aliases: dict):
+    """Any {"Name": alias, "Entity": table} pair anywhere in the file."""
+    if isinstance(node, dict):
+        if "Name" in node and "Entity" in node and isinstance(node.get("Entity"), str):
+            aliases[node["Name"]] = node["Entity"]
+        for v in node.values():
+            _collect_aliases(v, aliases)
+    elif isinstance(node, list):
+        for v in node:
+            _collect_aliases(v, aliases)
+
+
+def _source_entity(expr, aliases: dict):
+    """Resolve the table behind an Expression.SourceRef node."""
+    if not isinstance(expr, dict):
+        return None
+    ref = expr.get("SourceRef") or expr.get("Expression", {}).get("SourceRef") \
+        if isinstance(expr.get("Expression"), dict) else expr.get("SourceRef")
+    if not isinstance(ref, dict):
+        # walk one level deeper (Aggregation wraps Column, etc.)
+        for v in expr.values():
+            found = _source_entity(v, aliases) if isinstance(v, (dict, list)) else None
+            if found:
+                return found
+        return None
+    if "Entity" in ref:
+        return ref["Entity"]
+    if "Source" in ref:
+        return aliases.get(ref["Source"], ref["Source"])
+    return None
+
+
+def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
+    """Find every Column/Measure/HierarchyLevel/Aggregation reference."""
+    if isinstance(node, dict):
+        for kind in _FIELD_KINDS:
+            if kind in node and isinstance(node[kind], dict):
+                inner = node[kind]
+                if kind == "Aggregation":
+                    # unwrap to the underlying column, keep the function
+                    func = inner.get("Function")
+                    _collect_field_refs(inner.get("Expression"), aliases, out,
+                                        context or f"aggregation({func})")
+                    continue
+                if kind == "HierarchyLevel":
+                    level = inner.get("Level")
+                    hierarchy = inner.get("Expression", {}).get("Hierarchy", {})
+                    table = _source_entity(hierarchy.get("Expression", {}), aliases) \
+                        or _source_entity(hierarchy, aliases)
+                    if table and level:
+                        out.append({"table": table, "field": level,
+                                    "kind": "hierarchyLevel", "context": context})
+                    continue
+                prop = inner.get("Property")
+                table = _source_entity(inner.get("Expression", {}), aliases)
+                if prop:
+                    out.append({
+                        "table": table,
+                        "field": prop,
+                        "kind": "column" if kind == "Column" else "measure",
+                        "context": context,
+                    })
+        for key, v in node.items():
+            if key in _FIELD_KINDS:
+                continue
+            _collect_field_refs(v, aliases, out, context)
+    elif isinstance(node, list):
+        for v in node:
+            _collect_field_refs(v, aliases, out, context)
+
+
+_FILTER_TYPES = {
+    "Categorical": "basic", "Advanced": "advanced", "TopN": "top N",
+    "RelativeDate": "relative date", "RelativeTime": "relative time",
+    "Passthrough": "passthrough", "Tuple": "tuple",
+}
+
+
+def _collect_filters(config, aliases: dict, level: str, target: str) -> list[dict]:
+    """Pull the filters array out of a filterConfig / filters blob."""
+    out = []
+    if config is None:
+        return out
+    if isinstance(config, str):
+        parsed = None
+        try:
+            parsed = json.loads(config)
+        except json.JSONDecodeError:
+            return out
+        config = parsed
+    filters = config.get("filters", config) if isinstance(config, dict) else config
+    if not isinstance(filters, list):
+        return out
+    for f in filters:
+        if not isinstance(f, dict):
+            continue
+        refs: list[dict] = []
+        _collect_field_refs(f.get("field") or f.get("expression") or f, aliases, refs)
+        first = refs[0] if refs else {}
+        out.append({
+            "level": level,
+            "target": target,
+            "table": first.get("table"),
+            "field": first.get("field"),
+            "kind": first.get("kind", "column"),
+            "filterType": _FILTER_TYPES.get(f.get("type", ""), (f.get("type") or "basic")),
+            "name": f.get("name"),
+            "isHidden": bool((f.get("howCreated") == 1) or f.get("isHiddenInViewMode", False)),
+            "raw": _summarize_condition(f),
+        })
+    return out
+
+
+def _summarize_condition(f: dict) -> str | None:
+    """A short human-readable hint of the filter condition if present."""
+    blob = f.get("filter") or f.get("Where") or f.get("condition")
+    if blob is None:
+        return None
+    text = json.dumps(blob)
+    literals = re.findall(r"'([^']*)'|\"Value\"\s*:\s*\"([^\"]*)\"", text)
+    vals = [a or b for a, b in literals if (a or b)]
+    vals = [v.strip("'") for v in vals if not v.startswith("{")]
+    if vals:
+        uniq = list(dict.fromkeys(vals))[:6]
+        return ", ".join(uniq)
+    return None
+
+
+# --------------------------------------------------------------------------
+# Main parse
+# --------------------------------------------------------------------------
+
+def parse_report(report_path: str | Path) -> dict:
+    root = Path(report_path)
+    definition = root / "definition"
+    if not definition.exists():
+        # tolerate being handed the definition folder itself
+        if (root / "pages").exists() or (root / "report.json").exists():
+            definition = root
+        else:
+            raise FileNotFoundError(
+                f"'{root}' does not look like a PBIR report folder "
+                f"(no definition/ subfolder found)."
+            )
+
+    warnings: list[dict] = []
+    pages_out: list[dict] = []
+    report_filters: list[dict] = []
+    bookmarks_out: list[dict] = []
+
+    # ---- report-level filters ------------------------------------------
+    report_json = _load(definition / "report.json") or {}
+    aliases: dict = {}
+    _collect_aliases(report_json, aliases)
+    report_filters = _collect_filters(
+        report_json.get("filterConfig"), aliases, "report", "(entire report)"
+    )
+
+    # ---- pages ----------------------------------------------------------
+    pages_dir = definition / "pages"
+    order: list[str] = []
+    active = None
+    pages_meta = _load(pages_dir / "pages.json") or {}
+    order = pages_meta.get("pageOrder", [])
+    active = pages_meta.get("activePageName")
+
+    page_dirs = [d for d in pages_dir.iterdir() if d.is_dir()] if pages_dir.exists() else []
+
+    def sort_key(d: Path):
+        return order.index(d.name) if d.name in order else len(order)
+
+    for page_dir in sorted(page_dirs, key=sort_key):
+        page_json = _load(page_dir / "page.json")
+        if page_json is None:
+            warnings.append({"severity": "warning", "category": "Unreadable page",
+                             "message": f"Could not parse {page_dir.name}/page.json; page skipped."})
+            continue
+        p_aliases: dict = {}
+        _collect_aliases(page_json, p_aliases)
+        display = page_json.get("displayName") or page_json.get("name") or page_dir.name
+        visibility = page_json.get("visibility")
+        hidden = visibility in ("HiddenInViewMode", "hidden", 1)
+
+        page_filters = _collect_filters(page_json.get("filterConfig"),
+                                        p_aliases, "page", display)
+
+        visuals_out: list[dict] = []
+        visuals_dir = page_dir / "visuals"
+        if visuals_dir.exists():
+            for vis_dir in sorted(d for d in visuals_dir.iterdir() if d.is_dir()):
+                vis_json = _load(vis_dir / "visual.json")
+                if vis_json is None:
+                    warnings.append({
+                        "severity": "warning", "category": "Unreadable visual",
+                        "message": f"Could not parse visual {vis_dir.name} on page '{display}'.",
+                    })
+                    continue
+                v_aliases: dict = {}
+                _collect_aliases(vis_json, v_aliases)
+                visual_node = vis_json.get("visual", {})
+                vtype = visual_node.get("visualType", "unknown")
+                pos = vis_json.get("position", {})
+
+                # title: objects.title[...] properties.text literal, best effort
+                title = None
+                text = json.dumps(visual_node.get("objects", {}).get("title", []))
+                m = re.search(r"'([^']+)'", text)
+                if m:
+                    title = m.group(1)
+
+                # field refs: roles under query/queryState carry role names
+                refs: list[dict] = []
+                query_state = (visual_node.get("query", {}) or {}).get("queryState", {})
+                if query_state:
+                    for role, blob in query_state.items():
+                        _collect_field_refs(blob, v_aliases, refs, context=role)
+                else:
+                    _collect_field_refs(visual_node.get("query", visual_node),
+                                        v_aliases, refs)
+
+                # de-duplicate identical refs
+                seen = set()
+                fields = []
+                for r in refs:
+                    key = (r["table"], r["field"], r["kind"], r["context"])
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    fields.append(r)
+
+                visual_filters = _collect_filters(vis_json.get("filterConfig"),
+                                                  v_aliases, "visual",
+                                                  f"{display} / {title or vtype}")
+                page_filters.extend(visual_filters)
+
+                visuals_out.append({
+                    "id": vis_dir.name,
+                    "type": vtype,
+                    "title": title,
+                    "x": pos.get("x"), "y": pos.get("y"),
+                    "width": pos.get("width"), "height": pos.get("height"),
+                    "hidden": bool(vis_json.get("isHidden", False)),
+                    "fields": fields,
+                    "filters": visual_filters,
+                })
+
+        pages_out.append({
+            "id": page_dir.name,
+            "name": display,
+            "hidden": hidden,
+            "isActive": page_dir.name == active,
+            "visuals": visuals_out,
+            "filters": page_filters,
+        })
+
+    # ---- bookmarks ------------------------------------------------------
+    bookmarks_dir = definition / "bookmarks"
+    if bookmarks_dir.exists():
+        for bm_file in sorted(bookmarks_dir.glob("*.json")):
+            bm = _load(bm_file)
+            if not isinstance(bm, dict):
+                continue
+            b_aliases: dict = {}
+            _collect_aliases(bm, b_aliases)
+            refs: list[dict] = []
+            _collect_field_refs(bm, b_aliases, refs, context="bookmark")
+            bookmarks_out.append({
+                "name": bm.get("displayName") or bm_file.stem,
+                "fields": refs,
+            })
+
+    # ---- requirements manifest -----------------------------------------
+    manifest: dict[tuple, dict] = {}
+
+    def note(table, field, kind, where):
+        if not field:
+            return
+        key = (table or "?", field, kind)
+        entry = manifest.setdefault(key, {
+            "table": table, "field": field, "kind": kind, "usedIn": [],
+        })
+        if where not in entry["usedIn"]:
+            entry["usedIn"].append(where)
+
+    for f in report_filters:
+        note(f["table"], f["field"], f["kind"], "Report filter")
+    for page in pages_out:
+        for f in page["filters"]:
+            note(f["table"], f["field"], f["kind"],
+                 f"{f['level'].capitalize()} filter — {f['target']}")
+        for vis in page["visuals"]:
+            label = f"{page['name']} / {vis['title'] or vis['type']}"
+            for r in vis["fields"]:
+                note(r["table"], r["field"], r["kind"], label)
+    for bm in bookmarks_out:
+        for r in bm["fields"]:
+            note(r["table"], r["field"], r["kind"], f"Bookmark: {bm['name']}")
+
+    return {
+        "name": root.name.replace(".Report", ""),
+        "pages": pages_out,
+        "reportFilters": report_filters,
+        "bookmarks": bookmarks_out,
+        "manifest": sorted(manifest.values(),
+                           key=lambda e: (e["table"] or "", e["field"])),
+        "warnings": warnings,
+    }
