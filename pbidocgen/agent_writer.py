@@ -30,8 +30,18 @@ DAX_CHARS = 1200          # per-measure DAX budget in the agent doc
 # small helpers
 # ---------------------------------------------------------------------------
 
+def _flat(s) -> str:
+    """TMSL stores several text fields (description, expressions…) as either
+    a string or a list of lines — normalise to one string."""
+    if s is None:
+        return ""
+    if isinstance(s, (list, tuple)):
+        return "\n".join(str(x) for x in s)
+    return str(s)
+
+
 def _cell(s) -> str:
-    return (str(s if s is not None else "")
+    return (_flat(s)
             .replace("|", "\\|").replace("\n", " ").strip() or "—")
 
 
@@ -49,7 +59,7 @@ def _join(items, sep=", ", empty="—"):
 
 
 def _clip(s, n):
-    s = re.sub(r"\s+", " ", s or "").strip()
+    s = re.sub(r"\s+", " ", _flat(s)).strip()
     return s if len(s) <= n else s[:n].rstrip() + " …[truncated]"
 
 

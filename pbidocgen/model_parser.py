@@ -184,7 +184,7 @@ def parse_model(bim_path: str | Path) -> dict:
                 "isCalculated": col.get("type") == "calculated",
                 "expression": expr_text(col.get("expression")) or None,
                 "sortByColumn": col.get("sortByColumn"),
-                "description": col.get("description"),
+                "description": expr_text(col.get("description")) or None,
                 "dataCategory": col.get("dataCategory"),
                 "formatString": col.get("formatString"),
             }
@@ -198,7 +198,7 @@ def parse_model(bim_path: str | Path) -> dict:
                 "expression": expr_text(mea.get("expression")),
                 "displayFolder": mea.get("displayFolder"),
                 "formatString": mea.get("formatString"),
-                "description": mea.get("description"),
+                "description": expr_text(mea.get("description")) or None,
                 "isHidden": bool(mea.get("isHidden", False)),
                 "table": name,
             })
@@ -230,7 +230,7 @@ def parse_model(bim_path: str | Path) -> dict:
         tables_out.append({
             "name": name,
             "isHidden": bool(tbl.get("isHidden", False)),
-            "description": tbl.get("description"),
+            "description": expr_text(tbl.get("description")) or None,
             "dataCategory": tbl.get("dataCategory"),
             "columns": columns,
             "measures": measures,
