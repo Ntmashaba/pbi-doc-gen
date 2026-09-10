@@ -380,3 +380,4 @@ def render_agent_md(payload: dict, out_path: str | Path) -> Path:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(build_agent_md(payload), encoding="utf-8")
     return out_path
+

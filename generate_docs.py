@@ -55,6 +55,8 @@ def main(argv=None) -> int:
     ap.add_argument("--title", default=None, help="Document title (default: derived from inputs)")
     ap.add_argument("--json", dest="json_out", default=None,
                     help="Also write the consolidated analysis JSON to this path")
+    ap.add_argument("--csv", dest="csv_out", metavar="PATH",
+                    help="Write column usage CSV: one row per column and page (requires a model)")
     ap.add_argument("--word", dest="word_out", default=None,
                     help="Also write a Word document (.docx) to this path — the narrative "
                          "subset for handovers and sign-off; the HTML stays the working doc")
@@ -87,6 +89,8 @@ def main(argv=None) -> int:
             return 2
 
     model = report = linked = None
+    if args.csv_out and not args.model:
+        ap.error("--csv requires a semantic model; supply --model or --project.")
 
     if args.model:
         bim = Path(args.model)
@@ -109,7 +113,11 @@ def main(argv=None) -> int:
             print(f"error: report folder not found: {rep}", file=sys.stderr)
             return 2
         print(f"Parsing report folder   {rep}")
-        report = parse_report(rep)
+        try:
+            report = parse_report(rep)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
         n_vis = sum(len(p["visuals"]) for p in report["pages"])
         print(f"  {len(report['pages'])} pages, {n_vis} visuals, "
               f"{len(report['manifest'])} distinct field references")
@@ -138,6 +146,11 @@ def main(argv=None) -> int:
         jp.parent.mkdir(parents=True, exist_ok=True)
         jp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"Wrote {jp}")
+
+    if args.csv_out:
+        from pbidocgen.column_usage import write_column_csv
+        cp = write_column_csv(payload["columns"], args.csv_out)
+        print(f"Wrote {cp}  (column/page usage)")
 
     if args.word_out:
         from pbidocgen.word_writer import render_docx

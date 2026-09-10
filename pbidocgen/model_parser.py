@@ -218,6 +218,8 @@ def parse_model(model_path: str | Path) -> dict:
         for col in tbl.get("columns", []):
             c = {
                 "name": col.get("name", ""),
+                "sourceColumn": col.get("sourceColumn"),
+                "isKey": bool(col.get("isKey", False)),
                 "dataType": col.get("dataType", ""),
                 "isHidden": bool(col.get("isHidden", False)),
                 "isCalculated": col.get("type") == "calculated",
@@ -240,6 +242,7 @@ def parse_model(model_path: str | Path) -> dict:
                 "formatString": expr_text(mea.get("formatString")) or None,
                 "description": expr_text(mea.get("description")) or None,
                 "isHidden": bool(mea.get("isHidden", False)),
+                "formatStringExpression": expr_text((mea.get("formatStringDefinition") or {}).get("expression")),
                 "table": name,
             })
             measure_index[mea.get("name", "")] = name
@@ -277,6 +280,8 @@ def parse_model(model_path: str | Path) -> dict:
             {
                 "name": h.get("name", ""),
                 "levels": [lv.get("column") for lv in h.get("levels", [])],
+                "levelDetails": [{"name": lv.get("name"), "column": lv.get("column")}
+                                 for lv in h.get("levels", [])],
             }
             for h in tbl.get("hierarchies", [])
         ]
@@ -513,6 +518,7 @@ def parse_model(model_path: str | Path) -> dict:
 
     return {
         "name": model.get("name") or bim_path.stem,
+        "dependencyExpressions": _dependency_expressions(model),
         "sourceFormat": source_format,
         "sourcePath": str(bim_path),
         "compatibilityLevel": doc.get("compatibilityLevel"),
@@ -523,3 +529,26 @@ def parse_model(model_path: str | Path) -> dict:
         "roles": roles_out,
         "warnings": warnings,
     }
+
+
+def _dependency_expressions(model: dict) -> list[dict]:
+    """Retain additional DAX roots that can block column deletion."""
+    out = []
+    def walk(node, table, path):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in ("expression", "filterExpression") and isinstance(value, (str, list)):
+                    out.append({"table": table, "label": path, "expression": expr_text(value)})
+                elif key not in ("annotations", "extendedProperties"):
+                    walk(value, table, path + "/" + key)
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                walk(value, table, path + "/" + str(value.get("name", i) if isinstance(value, dict) else i))
+    for tbl in model.get("tables", []):
+        name = tbl.get("name", "")
+        for key in ("calculationGroup", "detailRowsDefinition"):
+            walk(tbl.get(key), name, f"{name}/{key}")
+        for part in tbl.get("partitions", []):
+            if (part.get("source") or {}).get("type") == "calculated":
+                walk(part["source"], name, f"Calculated table {name}")
+    return out

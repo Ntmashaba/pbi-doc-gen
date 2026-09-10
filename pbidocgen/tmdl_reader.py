@@ -394,8 +394,8 @@ def _table_to_tmsl(node: Node) -> dict:
             mea["isHidden"] = _as_bool(m.prop("isHidden"))
         # a format-string expression is a child object, not a property
         fsd = m.kid("formatStringDefinition")
-        if fsd is not None and not mea.get("formatString"):
-            mea["formatString"] = fsd.text()
+        if fsd is not None:
+            mea["formatStringDefinition"] = {"expression": fsd.text()}
         measures.append(mea)
     out["measures"] = measures
 

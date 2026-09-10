@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from .column_usage import build_column_usage
 
 TEMPLATE = Path(__file__).parent / "template.html"
 
@@ -14,6 +15,10 @@ def build_payload(model: dict | None, report: dict | None,
     mode = ("combined" if model and report
             else "semantic-only" if model
             else "report-only")
+    columns = build_column_usage(model, report) if model else None
+    if columns and report:
+        for measure in model["measures"]:
+            measure["usedInReport"] = f"{measure['table']}[{measure['name']}]" in columns["reportMeasures"]
     return {
         "title": title,
         "mode": mode,
@@ -21,6 +26,7 @@ def build_payload(model: dict | None, report: dict | None,
         "model": model,
         "report": report,
         "linked": linked,
+        "columns": columns,
     }
 
 

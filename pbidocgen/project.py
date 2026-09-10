@@ -191,3 +191,4 @@ def discover(path: str | Path) -> dict:
         )
 
     return {"model": model, "report": report, "title": title, "notes": notes}
+

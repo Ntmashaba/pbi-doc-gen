@@ -106,6 +106,7 @@ def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
                         or _source_entity(hierarchy, aliases)
                     if table and level:
                         out.append({"table": table, "field": level,
+                                    "hierarchy": hierarchy.get("Hierarchy"),
                                     "kind": "hierarchyLevel", "context": context})
                     continue
                 prop = inner.get("Property")
@@ -207,8 +208,13 @@ def parse_report(report_path: str | Path) -> dict:
 
     # ---- report-level filters ------------------------------------------
     report_json = _load(definition / "report.json") or {}
+    if not report_json or not (definition / "pages").is_dir():
+        warnings.append({"severity": "warning", "category": "Incomplete report",
+                         "message": "Report metadata or PBIR pages are missing/unreadable; deletion candidates cannot be assessed."})
     aliases: dict = {}
     _collect_aliases(report_json, aliases)
+    report_fields = []
+    _collect_field_refs(report_json, aliases, report_fields)
     report_filters = _collect_filters(
         report_json.get("filterConfig"), aliases, "report", "(entire report)"
     )
@@ -234,6 +240,8 @@ def parse_report(report_path: str | Path) -> dict:
             continue
         p_aliases: dict = {}
         _collect_aliases(page_json, p_aliases)
+        page_fields = []
+        _collect_field_refs(page_json, p_aliases, page_fields)
         display = page_json.get("displayName") or page_json.get("name") or page_dir.name
         visibility = page_json.get("visibility")
         hidden = visibility in ("HiddenInViewMode", "hidden", 1)
@@ -275,11 +283,19 @@ def parse_report(report_path: str | Path) -> dict:
                     _collect_field_refs(visual_node.get("query", visual_node),
                                         v_aliases, refs)
 
+                # Include conditional formatting, dynamic titles and other
+                # expressions outside queryState in the usage inventory.
+                extra_refs = []
+                _collect_field_refs(vis_json, v_aliases, extra_refs, context="visual expression")
+                bound = {(r["table"], r["field"], r["kind"], r.get("hierarchy")) for r in refs}
+                refs.extend(r for r in extra_refs
+                            if (r["table"], r["field"], r["kind"], r.get("hierarchy")) not in bound)
+
                 # de-duplicate identical refs
                 seen = set()
                 fields = []
                 for r in refs:
-                    key = (r["table"], r["field"], r["kind"], r["context"])
+                    key = (r["table"], r["field"], r["kind"], r.get("hierarchy"), r["context"])
                     if key in seen:
                         continue
                     seen.add(key)
@@ -308,6 +324,7 @@ def parse_report(report_path: str | Path) -> dict:
             "isActive": page_dir.name == active,
             "visuals": visuals_out,
             "filters": page_filters,
+            "otherFields": page_fields,
         })
 
     # ---- bookmarks ------------------------------------------------------
@@ -316,6 +333,8 @@ def parse_report(report_path: str | Path) -> dict:
         for bm_file in sorted(bookmarks_dir.glob("*.json")):
             bm = _load(bm_file)
             if not isinstance(bm, dict):
+                warnings.append({"severity": "warning", "category": "Unreadable bookmark",
+                                 "message": f"Could not parse {bm_file.name}."})
                 continue
             b_aliases: dict = {}
             _collect_aliases(bm, b_aliases)
@@ -357,6 +376,7 @@ def parse_report(report_path: str | Path) -> dict:
         "name": root.name.replace(".Report", ""),
         "pages": pages_out,
         "reportFilters": report_filters,
+        "otherFields": report_fields,
         "bookmarks": bookmarks_out,
         "manifest": sorted(manifest.values(),
                            key=lambda e: (e["table"] or "", e["field"])),

@@ -580,3 +580,4 @@ def render_docx(payload: dict, out_path: str | Path) -> Path:
         z.writestr("docProps/core.xml", _core(payload["title"], payload["generated"]))
         z.writestr("docProps/app.xml", _APP)
     return out_path
+

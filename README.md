@@ -6,6 +6,58 @@ The goal is onboarding: a Power BI developer who has never seen the report befor
 
 No installation beyond Python. No third-party packages. One command, one file out.
 
+## Which columns are used, and which can be deleted?
+
+The HTML now opens on **Columns** when a model is supplied. It lists **one row
+per column and report page**, with deletion assessment and usage first. A column
+used on four pages has four rows. A column with no page usage still has one row
+with a blank page, so removal candidates remain visible. Page IDs distinguish
+pages with identical display names. Counts at the top count distinct columns.
+
+```bash
+python generate_docs.py --project path/to/MyReport.pbip --output docs/MyReport.html --csv docs/column-pages.csv
+```
+
+- To answer **what columns are used**, choose **Used in report**. The page usage
+  shows direct bindings and dependencies through measures or calculated columns.
+- To answer **what columns can be deleted**, choose **Deletion candidate**.
+  These have no detected references in the supplied model and report. Check
+  other reports, Excel/composite-model consumers and Power Query steps before
+  removal; the tool does not certify deletion as safe.
+- **Keep** means there is a detected report or model dependency. Evidence
+  includes all dependent measures (including chains), calculated columns,
+  calculated-table/calculation-item expressions, RLS, keys, relationships
+  (including inactive ones), hierarchies, sort-by columns and dynamic measure
+  format expressions. A measure need not appear in the report to block deleting
+  a column it references.
+- **Review** means usage cannot be assessed fully. Whole-table DAX references,
+  unresolved bindings/DAX references, or unreadable report/model definitions
+  block a candidate verdict. With a model alone, report usage is **Unknown**
+  and no deletion candidates are issued.
+
+Search across columns, calculations and sources; filter by page or assessment;
+click a column heading to sort. **Export filtered CSV** exports the rows currently
+shown. `--csv PATH` exports the complete inventory using the same fields, with
+UTF-8 BOM for Excel and formula-like cells escaped as text. Report-only mode
+does not support column inventory or `--csv`, because the full column list is
+unknown without a model.
+
+Expand **Evidence & source** for dependent measures, model dependencies, page
+evidence, bookmark usage, partition sources and the source column name retained
+in model metadata. This source column is the **model input name**, not verified
+physical lineage through Power Query renames or transformations. Multiple
+partition sources are listed together without multiplying column/page rows.
+Report-level filters apply to every page. Bookmark-only dependencies have a
+blank page; the tool does not guess which page a bookmark affects.
+
+This remains static analysis, not a full DAX/M engine. Whole-table dependencies
+are review blockers rather than claims that every column is read. Calculation
+items, field parameters and calculated tables can require additional review of
+runtime behavior. The Columns inventory is included in JSON as `columns`; its
+cleanup assessments are available in HTML and CSV, not in the Word/agent layouts.
+
+Run the regression tests with `python -m unittest discover -s tests -v`.
+
 ```
 python generate_docs.py --model Sales.SemanticModel/model.bim --report Sales.Report --output docs/Sales.html
 ```
@@ -154,6 +206,7 @@ python generate_docs.py --report path/to/MyReport.Report --output docs/report.ht
 | `--output`, `-o` | Where to write the HTML. Defaults to `<title>.html` in the current folder. |
 | `--title` | Title shown in the document. Defaults to the model or report name. |
 | `--json` | Also write the consolidated analysis as a JSON file (see [embedded JSON](#the-embedded-json-for-catalogs-and-automation)). |
+| `--csv` | Write the full column/page inventory to this CSV path; requires a semantic model. |
 | `--word` | Also write a Word document (`.docx`) — see [Word export](#word-export). Still zero dependencies: the `.docx` is written with the standard library. |
 | `--agent` | Also write an agent context document (`.agent.md`) — see [Agent context](#agent-context---agent). |
 

@@ -41,6 +41,13 @@ nav{background:var(--panel);border-right:1px solid var(--line);padding:1.1rem .8
 .nav-btn.disabled{opacity:.38;cursor:not-allowed}
 /* ---------------- content ---------------- */
 main{padding:1.4rem 2rem 4rem;max-width:1240px}
+main{min-width:0}
+.column-scroll{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:8px}
+.column-scroll table.t{min-width:1000px;border:0;overflow:visible}
+.column-scroll th{position:sticky;top:0;z-index:1}
+.column-scroll td{min-width:110px;max-width:300px;overflow-wrap:anywhere}
+.column-scroll details{min-width:200px;font-size:.8rem}
+.column-scroll summary{padding:.25rem .4rem;font-weight:400}
 /* mode coupler (signature) */
 .coupler{display:flex;align-items:stretch;gap:0;margin-bottom:1.5rem;font-family:var(--mono)}
 .coupler .half{flex:1;border:1.5px solid var(--ink);padding:.6rem .9rem;background:var(--panel)}
@@ -147,6 +154,7 @@ const usageOf = t => has.linked ? (L.tableUsage.find(u=>u.table===t)||{}).usage 
 /* ============================================================ tabs */
 const TABS = [
   {id:"overview", label:"Overview", group:"Start", avail:true},
+  {id:"columns", label:"Columns", group:"Start", avail:has.model, count:()=>DATA.columns?.columnCount},
   {id:"lineage",  label:"Lineage",  group:"Start", avail:has.linked},
   {id:"usage",    label:"Usage",    group:"Start", avail:has.linked, count:()=>L.tableUsage.filter(u=>u.usage==="none").length ? L.tableUsage.filter(u=>u.usage==="none").length+" unused" : null},
   {id:"pages",    label:"Pages",    group:"Report", avail:has.report, count:()=>R?.pages.length},
@@ -186,6 +194,87 @@ function switchTab(id){
   window.scrollTo(0,0);
   if(id==="rels") drawERD();
   if(id==="lineage") drawLineage();
+  if(id==="columns") filterColumns();
+}
+
+/* ============================================================ column/page inventory */
+let columnSort = {key:"column", direction:1};
+let visibleColumns = [];
+function rColumns(){
+  const a = DATA.columns;
+  const headings = [["decision","Deletion assessment"],["usedInReport","Used in report"],
+    ["table","Table"],["column","Column"],["page","Report page"],["pageUsage","Page usage"],
+    ["pageMeasures","Measures on this page"],["reason","Evidence & source"]];
+  return `<h1>Which columns are used?</h1>
+    <p class="sub">One row per column and page. Columns with no page usage remain in the list.</p>
+    <div class="grid c4" style="margin-top:1rem">${[["Columns",a.columnCount],["Used in report",a.counts["Used in report"]||0],
+      ["Deletion candidates",a.counts["Deletion candidate"]||0],["Need review",a.counts.Review||0]].map(([label,n])=>
+      `<div class="card stat"><div class="big">${num(n)}</div><div class="lbl">${label}</div></div>`).join("")}</div>
+    <div class="card"><b>Keep</b> means a report or model dependency was found.
+      <b>Deletion candidate</b> means no references were detected. <b>Review</b> means the analysis is incomplete or a dependency is uncertain.
+      <p class="mut" style="margin-top:.4rem">${esc(a.scope)}</p></div>
+    <div class="filter-row">
+      <input id="column-search" class="search" style="margin:0" aria-label="Search columns, measures or sources" placeholder="Search columns, measures, sources…" oninput="filterColumns()">
+      <select id="column-assessment" class="search" style="width:auto;margin:0" aria-label="Filter deletion assessment" onchange="filterColumns()">
+        <option value="">All assessments</option><option>Keep</option><option>Deletion candidate</option><option>Review</option></select>
+      <select id="column-used" class="search" style="width:auto;margin:0" aria-label="Filter report usage" onchange="filterColumns()">
+        <option value="">All report usage</option><option value="Yes">Used in report</option><option value="Not detected">No report usage detected</option><option value="Unknown">Usage unknown</option></select>
+      <select id="column-page" class="search" style="width:auto;margin:0;max-width:240px" aria-label="Filter report page" onchange="filterColumns()">
+        <option value="*">All pages</option><option value="">No specific page</option>
+        ${(R?.pages||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.id)})</option>`).join("")}</select>
+      <button class="chip" onclick="downloadColumnCsv()">Export filtered CSV</button>
+    </div>
+    <p id="column-count" class="mut" aria-live="polite" style="margin-bottom:.5rem"></p>
+    <div class="column-scroll"><table class="t"><thead><tr>${headings.map(([key,title])=>
+      `<th data-column-sort="${key}"><button class="xl" onclick="sortColumns('${key}')">${title}</button></th>`).join("")}</tr></thead>
+      <tbody id="column-rows"></tbody></table></div>`;
+}
+function filterColumns(){
+  const q = document.getElementById("column-search").value.toLowerCase().trim();
+  const assessment = document.getElementById("column-assessment").value;
+  const used = document.getElementById("column-used").value;
+  const page = document.getElementById("column-page").value;
+  visibleColumns = DATA.columns.rows.filter(r=>(!q||Object.values(r).join(" ").toLowerCase().includes(q)) &&
+    (!assessment||r.decision===assessment) && (!used||r.usedInReport===used) && (page==="*"||r.pageId===page));
+  const value = r=>String(r[columnSort.key]??"");
+  visibleColumns.sort((a,b)=>columnSort.direction*value(a).localeCompare(value(b),undefined,{numeric:true}) ||
+    a.table.localeCompare(b.table) || a.column.localeCompare(b.column) || a.pageId.localeCompare(b.pageId));
+  document.getElementById("column-count").textContent = `${visibleColumns.length} rows · ${new Set(visibleColumns.map(r=>JSON.stringify([r.table,r.column]))).size} distinct columns`;
+  document.querySelectorAll("[data-column-sort]").forEach(th=>th.setAttribute("aria-sort",
+    th.dataset.columnSort===columnSort.key?(columnSort.direction===1?"ascending":"descending"):"none"));
+  const list = values=>values.length?values.map(esc).join("<br>"):"—";
+  document.getElementById("column-rows").innerHTML = visibleColumns.map(r=>`<tr>
+    <td><span class="badge ${r.decision==='Keep'?'b-direct':r.decision==='Review'?'b-warn':'b-info'}">${esc(r.decision)}</span></td>
+    <td>${esc(r.usedInReport)}</td><td>${esc(r.table)}</td><td><b>${esc(r.column)}</b></td>
+    <td>${esc(r.page)||'—'}${r.pageId?`<div class="mut">${esc(r.pageId)}</div>`:''}</td><td>${esc(r.pageUsage)}</td>
+    <td>${list(r.pageMeasures)}</td><td><details><summary>${esc(r.reason)}</summary><div class="body">
+    <b>Page evidence</b><p>${list(r.evidence)}</p><b>All dependent measures</b><p>${list(r.usedByMeasures)}</p>
+    <b>Dependent calculations</b><p>${list(r.usedByCalculations)}</p><b>Model dependencies</b><p>${list(r.modelDependencies)}</p>
+    <b>Bookmarks</b><p>${list(r.bookmarkUsage)}</p><b>Partition sources</b><p>${list(r.source)}</p>
+    <b>Source column (model input)</b><p>${esc(r.sourceColumn)||'Unknown'}</p>
+    ${r.expression?`<b>Column expression</b><pre class="code">${esc(r.expression)}</pre>`:''}
+    <p class="mut">${esc(r.sourceNote)}</p>${r.reviewNotes.length?`<b>Review notes</b><p>${list(r.reviewNotes)}</p>`:''}
+    </div></details></td></tr>`).join("") || '<tr><td colspan="8">No columns match these filters.</td></tr>';
+}
+function sortColumns(key){
+  columnSort = {key,direction:columnSort.key===key?-columnSort.direction:1};
+  filterColumns();
+}
+function columnCsv(rows){
+  const cell = value=>{
+    let s = Array.isArray(value)?value.join("; "):String(value??"");
+    if(/^[=+@-]/.test(s.trimStart())||/^[\t\r\n]/.test(s)) s="'"+s;
+    return '"'+s.replace(/"/g,'""')+'"';
+  };
+  const fields = DATA.columns.csvFields;
+  return '\uFEFF'+[fields.map(([,title])=>cell(title)).join(','),
+    ...rows.map(row=>fields.map(([key])=>cell(row[key])).join(','))].join('\r\n')+'\r\n';
+}
+function downloadColumnCsv(){
+  const url = URL.createObjectURL(new Blob([columnCsv(visibleColumns)],{type:'text/csv;charset=utf-8'}));
+  const a = document.createElement('a'); a.href=url; a.download='column-page-usage.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 /* ============================================================ coupler */
@@ -578,11 +667,11 @@ function rWarnings(){
 }
 
 /* ============================================================ boot */
-const RENDER = {overview:rOverview, lineage:rLineage, usage:rUsage, pages:rPages,
+const RENDER = {columns:rColumns, overview:rOverview, lineage:rLineage, usage:rUsage, pages:rPages,
   filters:rFilters, manifest:rManifest, tables:rTables, measures:rMeasures,
   rels:rRels, sources:rSources, security:rSecurity, warnings:rWarnings};
 buildNav();
-switchTab("overview");
+switchTab(has.model ? "columns" : "overview");
 </script>
 </body>
 </html>
