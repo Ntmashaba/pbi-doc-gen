@@ -145,6 +145,9 @@ def build_agent_md(payload: dict) -> str:
         "supplied files: no query history, no data values, credential and "
         "parameter *names* only.",
     ]
+    if model and model.get("sourceFormat"):
+        honesty.insert(1, f"Semantic model read from {model['sourceFormat']} "
+                          f"(`{model.get('sourcePath') or '?'}`).")
     if payload["mode"] == "semantic-only":
         honesty.append("No report was supplied — nothing here can say whether "
                        "any object is actually *used*; usage claims are out of scope.")
@@ -277,6 +280,20 @@ def build_agent_md(payload: dict) -> str:
                     notes.append(_clip(c["description"], 160))
                 rows.append([c["name"], c["dataType"], "; ".join(notes)])
             w(_tbl(["Column", "Type", "Notes"], rows))
+
+        calc_groups = [t for t in model["tables"] if t.get("calculationGroup")]
+        if calc_groups:
+            w("## Calculation groups")
+            w("")
+            w("Calculation items rewrite whatever measure is in context, so they "
+              "multiply the meaning of every measure below.")
+            w("")
+            for t in calc_groups:
+                w(f"### {t['name']}")
+                w("")
+                for ci in t["calculationGroup"]:
+                    w(f"- **{ci['name']}** — `{_clip(ci['expression'], 300)}`")
+                w("")
 
         if model["measures"]:
             w("## Measures")

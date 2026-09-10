@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 """Generate a self-contained HTML documentation file for a Power BI
-semantic model (model.bim), a PBIR report folder, or both together.
+semantic model, a PBIR report folder, or both together.
+
+The semantic model may be TMSL (model.bim) or TMDL (a .SemanticModel folder of
+.tmdl files) — Power BI Desktop writes TMDL by default when you save a project.
 
 Examples
 --------
-Combined (full lineage and usage analysis):
-    python generate_docs.py --model Sales.SemanticModel/model.bim \
+A whole project, both artifacts discovered automatically:
+    python generate_docs.py --project Sales.pbip --output docs/Sales.html
+    python generate_docs.py --project C:/GIT/Sales --output docs/Sales.html
+
+Point at either artifact folder; the other is found via definition.pbir:
+    python generate_docs.py --project Sales.Report --output docs/Sales.html
+
+Naming both explicitly (TMDL folder or .bim, both accepted):
+    python generate_docs.py --model Sales.SemanticModel \
                             --report Sales.Report \
                             --output docs/Sales.html --title "Sales"
 
@@ -35,7 +45,11 @@ def main(argv=None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    ap.add_argument("--model", help="Path to model.bim (TMSL semantic model)")
+    ap.add_argument("--project", help="Path to a .pbip file, a project folder, or "
+                                      "either artifact folder — the semantic model and "
+                                      "report are discovered from it")
+    ap.add_argument("--model", help="Path to a semantic model: a .SemanticModel folder "
+                                    "(TMDL or TMSL) or a model.bim file")
     ap.add_argument("--report", help="Path to a PBIR report folder (the *.Report folder)")
     ap.add_argument("--output", "-o", default=None, help="Output HTML path (default: <name>.html)")
     ap.add_argument("--title", default=None, help="Document title (default: derived from inputs)")
@@ -51,8 +65,26 @@ def main(argv=None) -> int:
                          "to the HTML output")
     args = ap.parse_args(argv)
 
-    if not args.model and not args.report:
-        ap.error("Provide --model, --report, or both.")
+    if not args.model and not args.report and not args.project:
+        ap.error("Provide --project, --model, --report, or a combination.")
+
+    project_title = None
+    if args.project:
+        from pbidocgen.project import discover
+        try:
+            found = discover(args.project)
+        except FileNotFoundError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        project_title = found["title"]
+        for note in found["notes"]:
+            print(f"  note: {note}")
+        # explicit flags win over discovery
+        args.model = args.model or (str(found["model"]) if found["model"] else None)
+        args.report = args.report or (str(found["report"]) if found["report"] else None)
+        if not args.model and not args.report:
+            print(f"error: nothing to document in {args.project}", file=sys.stderr)
+            return 2
 
     model = report = linked = None
 
@@ -62,8 +94,13 @@ def main(argv=None) -> int:
             print(f"error: model file not found: {bim}", file=sys.stderr)
             return 2
         print(f"Parsing semantic model  {bim}")
-        model = parse_model(bim)
-        print(f"  {len(model['tables'])} tables, {len(model['measures'])} measures, "
+        try:
+            model = parse_model(bim)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"  {model['sourceFormat']}: {len(model['tables'])} tables, "
+              f"{len(model['measures'])} measures, "
               f"{len(model['relationships'])} relationships")
 
     if args.report:
@@ -88,7 +125,8 @@ def main(argv=None) -> int:
         if broken:
             print(f"  ⚠ {len(broken)} broken binding(s) — see the Warnings tab")
 
-    title = args.title or (model["name"] if model else report["name"])
+    title = args.title or (model["name"] if model else None) \
+        or project_title or (report["name"] if report else "Power BI")
     payload = build_payload(model, report, linked, title)
 
     out = args.output or f"{title}.html"

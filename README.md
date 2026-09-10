@@ -71,29 +71,27 @@ In **Power BI Desktop**:
 Open your `.pbix` in Power BI Desktop, then **File → Save as** and choose the **`.pbip`** file type. Desktop writes a folder structure next to the `.pbip` file:
 
 ```
-MyReport.pbip
-MyReport.Report/               ← report definition (this is the --report input)
+MyReport.pbip                  ← point --project here and everything else is found
+MyReport.Report/               ← report definition
+    definition.pbir            ← names the semantic model this report belongs to
     definition/
         report.json
         pages/
             ...
-MyReport.SemanticModel/        ← semantic model
-    model.bim                  ← this is the --model input (TMSL format)
+MyReport.SemanticModel/        ← semantic model, in EITHER format:
+    model.bim                  ← TMSL, a single JSON file
     ...or...
-    definition/                ← TMDL format (NOT yet supported — see below)
+    definition/                ← TMDL, a folder of .tmdl files (Desktop's default)
+        model.tmdl
+        relationships.tmdl
+        tables/*.tmdl
 ```
 
-### Step 3 — Make sure the model saved as `model.bim` (TMSL)
+### Step 3 — Nothing to do: both model formats are read
 
-Newer versions of Power BI Desktop can store the semantic model in either of two formats:
+Power BI Desktop stores the semantic model as either **TMSL** (`model.bim`) or **TMDL** (a `definition/` folder of `.tmdl` files). Recent Desktop versions default to TMDL. **The generator reads both**, and produces identical documentation either way — point `--model` at the `*.SemanticModel` folder and it works out which format is inside.
 
-- **TMSL** — a single `model.bim` JSON file. **This is what the generator reads.**
-- **TMDL** — a `definition/` folder of `.tmdl` files. **Not supported yet.**
-
-If your `*.SemanticModel` folder contains a `definition/` folder full of `.tmdl` files instead of `model.bim`, you have two options:
-
-- Check Desktop's options for the semantic model file format setting and re-save with the TMSL option, **or**
-- Use **Tabular Editor** (free, version 2 is fine): open Tabular Editor from Desktop's **External Tools** ribbon (or connect it to your model), then **File → Save As** and save as `model.bim`. This works regardless of what Desktop produced and is also the easiest route for models that live in the Power BI Service or Analysis Services.
+You do not need Tabular Editor, and you do not need to convert anything.
 
 ### Step 4 — Confirm the report saved in PBIR format
 
@@ -107,16 +105,32 @@ That's fine — and it's a designed-for scenario, not a degraded one. See [The t
 
 Clone or download this repository, then from its root folder:
 
-**Both inputs (recommended — full analysis):**
+**A whole project (simplest — both artifacts discovered for you):**
 
 ```
-python generate_docs.py --model path/to/MyReport.SemanticModel/model.bim ^
+python generate_docs.py --project path/to/MyReport.pbip --output docs/MyReport.html
+```
+
+`--project` also accepts the **project folder**, the **`*.SemanticModel`** folder, or the **`*.Report`** folder. Given a report, the generator follows its `definition.pbir` to find the matching semantic model, so all of these produce the same combined document:
+
+```
+python generate_docs.py --project C:/GIT/MyReport            --output docs/MyReport.html
+python generate_docs.py --project C:/GIT/MyReport.Report     --output docs/MyReport.html
+python generate_docs.py --project C:/GIT/MyReport.SemanticModel --output docs/MyReport.html
+```
+
+**Naming both inputs explicitly** (needed when a project holds several artifacts, or when the two live apart):
+
+```
+python generate_docs.py --model path/to/MyReport.SemanticModel ^
                         --report path/to/MyReport.Report ^
                         --output docs/MyReport.html ^
                         --title "My Report"
 ```
 
 (`^` is the Windows line-continuation; on macOS/Linux use `\`.)
+
+`--model` takes the `*.SemanticModel` folder in either format, its inner `definition/` folder, or a `model.bim` file directly. An explicit `--model` or `--report` always overrides what `--project` discovered.
 
 **Semantic model only:**
 
@@ -134,17 +148,19 @@ python generate_docs.py --report path/to/MyReport.Report --output docs/report.ht
 
 | Flag | Meaning |
 |---|---|
-| `--model` | Path to `model.bim` (TMSL). |
+| `--project` | Path to a `.pbip` file, a project folder, or either artifact folder. Discovers the semantic model and report from it. |
+| `--model` | Path to the semantic model: a `*.SemanticModel` folder (TMDL **or** TMSL), its `definition/` folder, or a `model.bim` file. |
 | `--report` | Path to the `*.Report` folder (PBIR). Pointing at the inner `definition/` folder also works. |
 | `--output`, `-o` | Where to write the HTML. Defaults to `<title>.html` in the current folder. |
 | `--title` | Title shown in the document. Defaults to the model or report name. |
 | `--json` | Also write the consolidated analysis as a JSON file (see [embedded JSON](#the-embedded-json-for-catalogs-and-automation)). |
 | `--word` | Also write a Word document (`.docx`) — see [Word export](#word-export). Still zero dependencies: the `.docx` is written with the standard library. |
+| `--agent` | Also write an agent context document (`.agent.md`) — see [Agent context](#agent-context---agent). |
 
 **Try it right now** with the bundled synthetic example (a small sales model plus a two-page report):
 
 ```
-python generate_docs.py --model examples/Sales.SemanticModel/model.bim --report examples/Sales.Report --output Sales.html
+python generate_docs.py --project examples/Sales.pbip --output Sales.html
 ```
 
 Open `Sales.html` in a browser.
@@ -255,7 +271,8 @@ Know what the tool can and cannot see — the documentation is only as trustwort
 - **One report's view.** "No references" means *this report* doesn't use the table. Other reports sharing the model, Analyze-in-Excel users, and composite models are invisible here.
 - **Inactive relationships** are reported but not traversed for the "possible" verdict, since they only apply inside `USERELATIONSHIP()` — which the measure dependency analysis does capture at the table level.
 - **Filter condition hints** are best-effort extractions of literal values, not full condition reconstructions. Complex advanced filters show a partial hint or none.
-- **TMDL models and legacy single-file `report.json` reports are not supported yet.** Convert via Tabular Editor / re-save with PBIR respectively (see [Getting the input files](#getting-the-input-files-out-of-power-bi)).
+- **Legacy single-file `report.json` reports are not supported.** Re-save with the PBIR format enabled (see [Getting the input files](#getting-the-input-files-out-of-power-bi)). Both semantic model formats — TMSL and TMDL — *are* supported.
+- **TMDL reading is a static text parse, not an Analysis Services load.** It covers what Desktop and Tabular Editor write. Translations (`cultures/`) and perspectives are skipped, since nothing downstream uses them. A `.tmdl` file that fails to parse is reported as a warning in the document rather than sinking the run.
 - **Custom visuals** are inventoried by their type identifier; their field bindings are extracted the same way as native visuals and usually resolve, but exotic custom-visual query shapes may be missed.
 
 When the tool isn't sure, it says less rather than guessing — that's a feature.
@@ -293,6 +310,11 @@ pbidocgen/
                             OOXML — no python-docx, no pip install)
     agent_writer.py         renders the same payload as agent context
                             markdown (--agent) — see "Agent context" above
+    tmdl_reader.py          reads a TMDL definition/ folder and emits the
+                            same shape a model.bim would, so everything
+                            downstream is format-agnostic
+    project.py              resolves a .pbip / project folder / artifact
+                            folder into the model and report paths
     template.html           the self-contained interactive documentation app
 examples/
     Sales.SemanticModel/    synthetic model.bim for trying the tool

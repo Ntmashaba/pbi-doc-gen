@@ -35,6 +35,8 @@ from pathlib import Path
 
 
 def _load(path: Path):
+    """Read a PBIR JSON file. Returns None if it is absent or unparseable —
+    every caller treats None as "this optional part is not present"."""
     try:
         return json.loads(path.read_text(encoding="utf-8-sig"))
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -42,6 +44,8 @@ def _load(path: Path):
             return json.loads(path.read_text(encoding="utf-16"))
         except Exception:
             return None
+    except OSError:
+        return None
 
 
 # --------------------------------------------------------------------------

@@ -27,12 +27,22 @@ def link(model: dict, report: dict) -> dict:
 
     for entry in report["manifest"]:
         table, field = entry["table"], entry["field"]
+        kind = entry.get("kind")
         resolution, home = "unresolved", None
-        if field in measures and (table is None or table in table_names):
+        # The report tells us whether it bound a column or a measure; trust it.
+        # Only fall back to name lookup when it didn't (or the binding is stale),
+        # otherwise a measure sharing a column's name steals the resolution.
+        binds_column = kind in ("column", "hierarchyLevel")
+        column_hit = table in table_names and (table, field) in columns
+        if column_hit and (binds_column or field not in measures):
+            resolution, home = "column", table
+            used_columns.add((table, field))
+            used_tables_direct.add(table)
+        elif field in measures and not binds_column and (table is None or table in table_names):
             resolution, home = "measure", measures[field]["table"]
             used_measures.add(field)
             used_tables_direct.add(home)
-        elif table in table_names and (table, field) in columns:
+        elif column_hit:
             resolution, home = "column", table
             used_columns.add((table, field))
             used_tables_direct.add(table)

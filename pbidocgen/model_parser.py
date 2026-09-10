@@ -1,4 +1,13 @@
-"""Parse a TMSL semantic model (model.bim) into a normalized dictionary.
+"""Parse a semantic model into a normalized dictionary.
+
+Accepts either format a Power BI project can use:
+
+    model.bim                       TMSL, a single JSON document
+    Sales.SemanticModel/            a project folder holding either format
+    Sales.SemanticModel/definition/ TMDL, a folder of .tmdl text files
+
+TMDL is read by `tmdl_reader`, which emits the same TMSL shape, so everything
+below this point is format-agnostic.
 
 Handles TMSL quirks:
 - expressions stored as either a string or a list of lines
@@ -159,9 +168,39 @@ def extract_dax_refs(expression: str) -> tuple[list[tuple[str, str]], list[str]]
 # Main parse
 # --------------------------------------------------------------------------
 
-def parse_model(bim_path: str | Path) -> dict:
-    bim_path = Path(bim_path)
-    doc = load_json_lenient(bim_path)
+def load_model_document(model_path: str | Path) -> tuple[dict, str, Path]:
+    """Resolve a model path to (TMSL-shaped document, format name, real path).
+
+    Accepts a .bim file, a .SemanticModel folder containing either format, or a
+    TMDL definition folder directly.
+    """
+    from .tmdl_reader import find_definition_dir, read_tmdl_model
+
+    path = Path(model_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Semantic model not found: {path}")
+
+    if path.is_file():
+        return load_json_lenient(path), "TMSL", path
+
+    # A folder: prefer an explicit model.bim, else look for TMDL.
+    for candidate in (path / "model.bim", path / "definition" / "model.bim"):
+        if candidate.is_file():
+            return load_json_lenient(candidate), "TMSL", candidate
+
+    definition = find_definition_dir(path)
+    if definition is not None:
+        return read_tmdl_model(path), "TMDL", definition
+
+    raise FileNotFoundError(
+        f"'{path}' is not a semantic model: expected a model.bim or a "
+        f"definition/ folder of .tmdl files inside it."
+    )
+
+
+def parse_model(model_path: str | Path) -> dict:
+    bim_path = Path(model_path)
+    doc, source_format, bim_path = load_model_document(bim_path)
     model = doc.get("model", doc)
 
     tables_out: list[dict] = []
@@ -186,7 +225,8 @@ def parse_model(bim_path: str | Path) -> dict:
                 "sortByColumn": col.get("sortByColumn"),
                 "description": expr_text(col.get("description")) or None,
                 "dataCategory": col.get("dataCategory"),
-                "formatString": col.get("formatString"),
+                "formatString": expr_text(col.get("formatString")) or None,
+                "displayFolder": expr_text(col.get("displayFolder")) or None,
             }
             columns.append(c)
             column_index[(name, c["name"])] = c
@@ -196,8 +236,8 @@ def parse_model(bim_path: str | Path) -> dict:
             measures.append({
                 "name": mea.get("name", ""),
                 "expression": expr_text(mea.get("expression")),
-                "displayFolder": mea.get("displayFolder"),
-                "formatString": mea.get("formatString"),
+                "displayFolder": expr_text(mea.get("displayFolder")) or None,
+                "formatString": expr_text(mea.get("formatString")) or None,
                 "description": expr_text(mea.get("description")) or None,
                 "isHidden": bool(mea.get("isHidden", False)),
                 "table": name,
@@ -209,12 +249,28 @@ def parse_model(bim_path: str | Path) -> dict:
             src = part.get("source", {}) or {}
             p_mode = src.get("type", "m")
             expression = expr_text(src.get("expression"))
+            if p_mode == "entity":
+                # Direct Lake / Fabric: the upstream object is named outright
+                # rather than expressed in M.
+                entity = src.get("entityName") or part.get("name", "")
+                schema = src.get("schemaName")
+                source = {
+                    "sourceType": "Direct Lake (entity)",
+                    "server": None,
+                    "database": src.get("expressionSource"),
+                    "schema": schema,
+                    "object": f"{schema}.{entity}" if schema else entity,
+                    "detail": None,
+                    "nativeQuery": False,
+                }
+            else:
+                source = extract_m_source(expression, p_mode)
             partitions.append({
                 "name": part.get("name", ""),
                 "mode": part.get("mode", "import"),
                 "type": p_mode,
                 "expression": expression,
-                "source": extract_m_source(expression, p_mode),
+                "source": source,
             })
 
         hierarchies = [
@@ -227,9 +283,16 @@ def parse_model(bim_path: str | Path) -> dict:
 
         annotations = {a.get("name"): a.get("value") for a in tbl.get("annotations", [])}
 
+        calc_group = tbl.get("calculationGroup")
         tables_out.append({
             "name": name,
             "isHidden": bool(tbl.get("isHidden", False)),
+            "calculationGroup": (
+                [{"name": ci.get("name", ""),
+                  "expression": expr_text(ci.get("expression"))}
+                 for ci in (calc_group.get("calculationItems") or [])]
+                if calc_group else None
+            ),
             "description": expr_text(tbl.get("description")) or None,
             "dataCategory": tbl.get("dataCategory"),
             "columns": columns,
@@ -384,7 +447,9 @@ def parse_model(bim_path: str | Path) -> dict:
         is_measure_container = n_meas > 0 and n_cols <= 1 and not many_side.get(name) and not one_side.get(name)
         is_helper = n_meas == 0 and not many_side.get(name) and not one_side.get(name) and tbl["isHidden"]
 
-        if is_field_param:
+        if tbl.get("calculationGroup"):
+            t_type = "calculation group"
+        elif is_field_param:
             t_type = "field parameter"
         elif is_date:
             t_type = "date dimension"
@@ -435,15 +500,21 @@ def parse_model(bim_path: str | Path) -> dict:
         connected.add(rel["fromTable"])
         connected.add(rel["toTable"])
     for tbl in tables_out:
-        if tbl["name"] not in connected and tbl["tableType"] not in ("measure container", "field parameter", "helper"):
+        if tbl["name"] not in connected and tbl["tableType"] not in ("measure container", "field parameter", "helper", "calculation group"):
             warnings.append({
                 "severity": "info",
                 "category": "Disconnected table",
                 "message": f"'{tbl['name']}' has no relationships to any other table.",
             })
 
+    for msg in doc.get("_readerWarnings", []):
+        warnings.append({"severity": "warning", "category": "Unreadable definition",
+                         "message": msg})
+
     return {
         "name": model.get("name") or bim_path.stem,
+        "sourceFormat": source_format,
+        "sourcePath": str(bim_path),
         "compatibilityLevel": doc.get("compatibilityLevel"),
         "culture": model.get("culture"),
         "tables": tables_out,
