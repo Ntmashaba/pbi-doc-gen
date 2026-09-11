@@ -11,9 +11,11 @@ bindings) and assembles the source → table → measure → page lineage record
 """
 
 from __future__ import annotations
+from .page_references import attach_report_locations
 
 
 def link(model: dict, report: dict) -> dict:
+    attach_report_locations(report)
     table_names = {t["name"] for t in model["tables"]}
     columns = {(t["name"], c["name"]) for t in model["tables"] for c in t["columns"]}
     measures = {m["name"]: m for m in model["measures"]}
@@ -174,4 +176,3 @@ def link(model: dict, report: dict) -> dict:
         "lineage": lineage,
         "warnings": warnings,
     }
-

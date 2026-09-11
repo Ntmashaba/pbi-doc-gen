@@ -165,13 +165,7 @@ def enrich_source(source, expression, mode, data_source=None):
 
 def build_source_inventory(model, report, linked, columns):
     rows = []
-    used_columns = {r["table"] for r in (columns or {}).get("rows", []) if r["usedInReport"] == "Yes"}
-    used_measures = set((columns or {}).get("reportMeasures", []))
-    table_usage = {u["table"]: u["usage"] for u in (linked or {}).get("tableUsage", [])}
     for table in model["tables"]:
-        used = (table["name"] in used_columns or any(f"{table['name']}[{m['name']}]" in used_measures for m in table["measures"]))
-        verdict = ("Usage unknown" if not report else "Used" if used or table_usage.get(table["name"]) in ("direct", "via measures")
-                   else "Possible dependency" if table_usage.get(table["name"]) == "possible" else "No usage detected")
         for part in table["partitions"] or [{"name": "", "source": {}, "expression": ""}]:
             source = part["source"]
             obj = source.get("object") or ""
@@ -181,9 +175,14 @@ def build_source_inventory(model, report, linked, columns):
             if schema and obj and not obj.startswith(schema + "."):
                 obj = schema + "." + obj
             rows.append({"report": report["name"] if report else "Not supplied", "table": table["name"],
-                         "usage": verdict, "partition": part["name"], "server": source.get("server") or "",
+                         "partition": part["name"], "server": source.get("server") or "",
                          "database": source.get("database") or "", "sourceType": source.get("sourceType") or "Unknown",
                          "objectType": source.get("objectType") or "Unknown", "object": obj,
                          "query": source.get("query") or "", "queryKind": source.get("queryKind") or "",
                          "expression": part["expression"], "notes": source.get("notes", [])})
-    return rows
+    # Retain partitions, but resolve report usage at page grain. Blank-page
+    # rows identify unassigned/report-only scope rather than inventing a page.
+    return [dict(row, page=usage["page"], pageId=usage["pageId"],
+                 pageScope=usage["scope"], usage=usage["usage"],
+                 pageFields=usage["fields"], pageMeasures=usage["measures"], pageEvidence=usage["evidence"])
+            for row in rows for usage in (columns or {}).get("tablePages", []) if usage["table"] == row["table"]]

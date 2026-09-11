@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 from collections import deque
 from pathlib import Path
+from .page_references import page_label
 
 DAX_CHARS = 1200          # per-measure DAX budget in the agent doc
 
@@ -77,7 +78,8 @@ def _reachability(model: dict) -> tuple[dict, dict]:
     Filters flow from the one side to the many side; both ways when the
     cross-filter is bidirectional. Returns (filters_downstream, sliceable_by):
     filters_downstream[T] = tables T's columns can filter;
-    sliceable_by[T]       = tables whose columns can slice T's measures.
+    sliceable_by[T]       = tables with an active filter path to T.
+    This does not infer the filter behaviour of measures homed on T.
     """
     graph: dict[str, set[str]] = {}
     for rel in model["relationships"]:
@@ -243,14 +245,16 @@ def build_agent_md(payload: dict) -> str:
             w("")
 
         downstream, sliceable = _reachability(model)
-        w("## Filter reachability (the feasibility map)")
+        w("## Filter reachability (model structure)")
         w("")
-        w("**Rule:** a measure homed on table A can be sliced by a column on "
-          "table B only if B appears in A's *sliceable by* list (or A == B). "
-          "If it doesn't, the report cannot be built without new modelling or "
-          "`USERELATIONSHIP()` over an inactive relationship.")
+        w("This map follows active relationship directions between tables. A measure's "
+          "home table is an organisational location, not a constraint on how it can be sliced. "
+          "Assess the tables and columns read by its DAX and dependent measures. "
+          "CALCULATE, REMOVEFILTERS, TREATAS and USERELATIONSHIP can change filter behaviour. "
+          "Reachability alone does not establish whether a measure responds to a slicer; "
+          "validate the expression and result in the intended filter context.")
         w("")
-        w(_tbl(["Table", "Sliceable by", "Filters (downstream)"],
+        w(_tbl(["Table", "Reachable from (active relationships)", "Filters (downstream)"],
                [[t["name"],
                  _join(sliceable.get(t["name"], []), empty="— nothing —"),
                  _join(downstream.get(t["name"], []), empty="— nothing —")]
@@ -327,6 +331,8 @@ def build_agent_md(payload: dict) -> str:
                     deps.append("tables (transitive): " + _join(m["allTables"]))
                 if deps:
                     w("Depends on — " + " | ".join(deps))
+                if m.get("pageUsage"):
+                    w("Used on — " + " | ".join(page_label(r) + ": " + r["usage"] for r in m["pageUsage"]))
                 w("")
 
         if model["roles"]:
@@ -339,6 +345,20 @@ def build_agent_md(payload: dict) -> str:
                 w("")
 
     # ---- report ---------------------------------------------------------
+    if payload.get("tableSources"):
+        w("## Table sources by report page")
+        w("")
+        w(_tbl(["Report", "Page", "Page ID", "Table", "Partition", "Page usage", "Server", "Database", "Object / query"],
+               [[r["report"], r["page"] or r["pageScope"], r["pageId"], r["table"], r["partition"], r["usage"],
+                 r["server"], r["database"], r["object"] or _clip(r["query"], 200)] for r in payload["tableSources"]]))
+    if payload.get("columns"):
+        w("## Column usage by report page")
+        w("")
+        w(payload["columns"]["scope"])
+        w("")
+        w(_tbl(["Report", "Page", "Page ID", "Column", "Page usage", "Assessment", "Measures on page"],
+               [[r["report"], r["page"] or r["pageScope"], r["pageId"], f"{r['table']}[{r['column']}]",
+                 r["pageUsage"], r["decision"], _join(r["pageMeasures"])] for r in payload["columns"]["rows"]]))
     if report:
         w("## Report structure")
         w("")
@@ -348,11 +368,15 @@ def build_agent_md(payload: dict) -> str:
                     for f in report["reportFilters"]))
             w("")
         for p in report["pages"]:
-            w(f"### Page: {p.get('displayName') or p.get('name')}")
-            if p.get("filters"):
+            w(f"### Page: {p['label']}")
+            if p.get("feeds"):
+                w(_tbl(["Model table", "Fields on this page", "Page usage"],
+                       [[r["table"], _join(r["fields"]), r["usage"]] for r in p["feeds"]]))
+            page_filters = [f for f in report.get("filterRows", []) if f["pageId"] == p["id"]]
+            if page_filters:
                 w("Page filters: " +
                   _join(f"{f.get('table') or ''}[{f.get('field')}]"
-                        for f in p["filters"]))
+                        for f in page_filters))
             w("")
             rows = []
             for v in p["visuals"]:
@@ -366,11 +390,9 @@ def build_agent_md(payload: dict) -> str:
     if linked and linked.get("lineage"):
         w("## Lineage: source → table → report pages")
         w("")
-        w(_tbl(["Source", "Object", "Table", "Type", "Usage", "Consumed by pages"],
-               [[ln.get("sourceType"), ln.get("object"),
-                 ln["table"], ln["tableType"], ln["usage"],
-                 _join(ln.get("consumers", []))]
-                for ln in linked["lineage"]]))
+        w(_tbl(["Report / page [ID]", "Source", "Object", "Table", "Page usage"],
+               [[page_label(r), r["sourceType"], r["object"], r["table"], r["usage"]]
+                for r in payload["tableSources"]]))
 
     return "\n".join(L)
 
@@ -380,4 +402,3 @@ def render_agent_md(payload: dict, out_path: str | Path) -> Path:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(build_agent_md(payload), encoding="utf-8")
     return out_path
-

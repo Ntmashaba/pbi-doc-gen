@@ -19,6 +19,7 @@ import re
 import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
+from .page_references import page_label
 
 # --------------------------------------------------------------------------
 # Page geometry (A4, 2 cm margins) — all values in DXA (1440 = 1 inch)
@@ -344,26 +345,22 @@ def build_docx_body(payload: dict) -> str:
         parts.append(table(["Source type", "Server / database", "Object", "Feeds table"],
                            rows, [0.22, 0.26, 0.30, 0.22]))
 
-    # ---- usage verdicts with evidence (combined) -------------------------
-    if linked:
-        parts.append(heading("Table usage — verdicts and evidence", 1))
-        rows = []
-        for u in linked["tableUsage"]:
-            if u["usage"] == "direct":
-                evidence = "Fields bound: " + _join(u["directFields"])
-                if u["viaMeasures"]:
-                    evidence += ". Also read by measures: " + _join(u["viaMeasures"])
-            elif u["usage"] == "via measures":
-                evidence = "Read by used measures: " + _join(u["viaMeasures"])
-            elif u["usage"] == "possible":
-                evidence = "Active relationship to used table(s): " + _join(u["relatedUsedTables"])
-            else:
-                evidence = ("No reference found in this report. Verify no other report or "
-                            "Excel connection uses this model before removing.")
-            rows.append([u["table"], u["tableType"], u["usage"], evidence])
-        rows.sort(key=lambda r: (["direct", "via measures", "possible", "none"].index(r[2]), r[0]))
-        parts.append(table(["Table", "Type", "Verdict", "Evidence"],
-                           rows, [0.18, 0.15, 0.13, 0.54]))
+    # ---- inventories use the same report/page rows as HTML and CSV ------
+    if payload.get("tableSources"):
+        parts.append(heading("Table sources by report page", 1))
+        parts.append(text_para("One row per report page, model table and partition. Blank pages identify unresolved or absent page usage.", style="Muted"))
+        parts.append(table(["Report / page [ID]", "Model table / partition", "Page usage; server / database", "Source object / query"],
+            [[page_label(r), r["table"] + " / " + r["partition"],
+              r["usage"] + "; " + _join([r["server"], r["database"]], " / "),
+              _join([r["object"], r["query"]], "\n")]
+             for r in payload["tableSources"]], [0.25, 0.20, 0.25, 0.30]))
+    if payload.get("columns"):
+        parts.append(heading("Column usage by report page", 1))
+        parts.append(text_para(payload["columns"]["scope"], style="Muted"))
+        parts.append(table(["Report / page [ID]", "Column", "Page usage", "Deletion assessment / measures"],
+            [[page_label(r), f"{r['table']}[{r['column']}]", r["pageUsage"],
+              r["decision"] + "; " + _join(r["pageMeasures"])]
+             for r in payload["columns"]["rows"]], [0.28, 0.24, 0.20, 0.28]))
 
     # ---- pages: what feeds them (report modes) ---------------------------
     if report:
@@ -376,21 +373,15 @@ def build_docx_body(payload: dict) -> str:
             if pg.get("isActive"):
                 flags.append("landing page")
             suffix = f"  ({', '.join(flags)})" if flags else ""
-            parts.append(heading(pg["name"] + suffix, 2))
+            parts.append(heading(pg["label"] + suffix, 2))
 
             # rolled-up feed: table -> fields used on this page
-            feed: dict[str, set] = {}
-            for vis in pg["visuals"]:
-                for f in vis["fields"]:
-                    feed.setdefault(f["table"] or "?", set()).add(f["field"])
-            for flt in pg["filters"]:
-                if flt["field"]:
-                    feed.setdefault(flt["table"] or "?", set()).add(flt["field"])
+            feed = pg.get("feeds", [])
             if feed:
                 parts.append(table(
-                    ["Model table", "Fields used on this page"],
-                    [[t, _join(sorted(fs))] for t, fs in sorted(feed.items())],
-                    [0.28, 0.72]))
+                    ["Model table", "Fields used on this page", "Page usage"],
+                    [[r["table"], _join(r["fields"]), r["usage"]] for r in feed],
+                    [0.25, 0.50, 0.25]))
             else:
                 parts.append(text_para("No field bindings found on this page.", style="Muted"))
 
@@ -403,7 +394,7 @@ def build_docx_body(payload: dict) -> str:
                     vrows.append([vis["title"] or "—", vis["type"], bindings])
                 parts.append(table(["Visual", "Type", "Bindings"], vrows, [0.22, 0.16, 0.62]))
 
-            pg_filters = [f for f in pg["filters"]]
+            pg_filters = [f for f in report.get("filterRows", []) if f["pageId"] == pg["id"]]
             if pg_filters:
                 parts.append(table(
                     ["Filter scope", "Field", "Type", "Condition hint"],
@@ -580,4 +571,3 @@ def render_docx(payload: dict, out_path: str | Path) -> Path:
         z.writestr("docProps/core.xml", _core(payload["title"], payload["generated"]))
         z.writestr("docProps/app.xml", _APP)
     return out_path
-

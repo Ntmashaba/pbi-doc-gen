@@ -108,6 +108,7 @@ svg text{font-family:var(--sans)}
 .dot{width:9px;height:9px;border-radius:2px;display:inline-block}
 @media (max-width:860px){.layout{grid-template-columns:1fr}nav{position:static;height:auto;display:flex;flex-wrap:wrap;gap:.2rem;border-right:0;border-bottom:1px solid var(--line)}.doc-title,.brand,.nav-group{width:100%}main{padding:1rem}}
 @media print{nav{display:none}.layout{grid-template-columns:1fr}}
+/*__EXPLORER_CSS__*/
 </style>
 </head>
 <body>
@@ -139,6 +140,8 @@ const hlDAX = s => esc(s)
 const goTable = n => { switchTab("tables"); requestAnimationFrame(()=>flash("tbl-"+slug(n))); };
 const goMeasure = n => { switchTab("measures"); requestAnimationFrame(()=>flash("mea-"+slug(n))); };
 const slug = s => String(s).replace(/[^\w]+/g,"_");
+const pageKey = id => Array.from(String(id)).map(c=>c.codePointAt(0).toString(16)).join('_');
+const pageLabel = r => r.pageId ? `${r.report} / ${r.page} [${r.pageId}]` : `${r.report} / No specific page`;
 function flash(id){
   const el = document.getElementById(id);
   if(!el) return;
@@ -147,16 +150,21 @@ function flash(id){
   el.style.boxShadow = "0 0 0 3px var(--pbi)";
   setTimeout(()=>{ el.style.boxShadow=""; }, 1600);
 }
-const tblLink = n => `<button class="xl" onclick="goTable('${esc(n).replace(/'/g,"\\'")}')">${esc(n)}</button>`;
-const meaLink = n => `<button class="xl" onclick="goMeasure('${esc(n).replace(/'/g,"\\'")}')">${esc(n)}</button>`;
-const usageOf = t => has.linked ? (L.tableUsage.find(u=>u.table===t)||{}).usage : null;
+const tblLink = n => `<button class="xl" onclick="${esc('goTable('+JSON.stringify(n)+')')}">${esc(n)}</button>`;
+const meaLink = n => `<button class="xl" onclick="${esc('goMeasure('+JSON.stringify(n)+')')}">${esc(n)}</button>`;
+const usageOf = t => {
+  if(!has.linked) return null;
+  if(pageScope==='*') return (L.tableUsage.find(u=>u.table===t)||{}).usage;
+  const kinds=(DATA.columns.tablePages||[]).filter(r=>r.table===t&&inPageScope(r)).flatMap(r=>r.kinds);
+  return kinds.includes('Direct')?'direct':kinds.some(k=>/Via measures|Via calculations|Table expression/.test(k))?'via measures':kinds.length?'possible':'none';
+};
 
 /* ============================================================ tabs */
 const TABS = [
   {id:"overview", label:"Overview", group:"Start", avail:true},
   {id:"columns", label:"Columns", group:"Start", avail:has.model, count:()=>DATA.columns?.columnCount},
   {id:"lineage",  label:"Lineage",  group:"Start", avail:has.linked},
-  {id:"usage",    label:"Usage",    group:"Start", avail:has.linked, count:()=>L.tableUsage.filter(u=>u.usage==="none").length ? L.tableUsage.filter(u=>u.usage==="none").length+" unused" : null},
+  {id:"usage",    label:"Usage",    group:"Start", avail:has.linked, count:()=>L.tableUsage.filter(u=>u.usage==="none").length ? L.tableUsage.filter(u=>u.usage==="none").length+" no references" : null},
   {id:"pages",    label:"Pages",    group:"Report", avail:has.report, count:()=>R?.pages.length},
   {id:"filters",  label:"Filters",  group:"Report", avail:has.report, count:()=>allFilters().length},
   {id:"manifest", label:"Field manifest", group:"Report", avail:has.report, count:()=>reportManifest().length},
@@ -168,8 +176,11 @@ const TABS = [
   {id:"warnings", label:"Warnings", group:"Quality", avail:true, count:()=>allWarnings().length||null},
 ];
 const allWarnings = () => [...(M?.warnings||[]), ...(R?.warnings||[]), ...(L?.warnings||[])];
-const allFilters = () => !R ? [] : [...R.reportFilters, ...R.pages.flatMap(p=>p.filters)];
-const reportManifest = () => has.linked ? L.manifest : (R?.manifest||[]);
+const allFilters = () => (R?.filterRows || []).filter(inPageScope);
+const reportManifest = () => (has.linked ? L.manifest : (R?.manifest||[])).map(e=>{
+  const locations=(e.locations||[]).filter(inPageScope);
+  return {...e,locations,usedIn:locations.map(l=>pageLabel(l)+": "+l.description)};
+}).filter(e=>pageScope==='*'||e.locations.length);
 
 function buildNav(){
   const nav = document.getElementById("nav");
@@ -187,14 +198,21 @@ function buildNav(){
 function switchTab(id){
   const tab = TABS.find(t=>t.id===id);
   if(!tab || !tab.avail) return;
+  rememberView();
+  closeInspector();
+  activeTab = id;
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
   const btn = document.getElementById("nav-"+id);
   if(btn) btn.classList.add("active");
-  document.getElementById("main").innerHTML = RENDER[id]();
+  document.getElementById("main").innerHTML = scopeBar(id) + RENDER[id]();
+  restoreView(id);
   window.scrollTo(0,0);
   if(id==="rels") drawERD();
   if(id==="lineage") drawLineage();
   if(id==="columns") filterColumns();
+  if(id==="tables") fTbl(document.getElementById("table-search").value);
+  if(id==="manifest") fMan(document.getElementById("manifest-search").value);
+  if(id==="measures") fMea(document.getElementById("measure-search").value);
 }
 
 /* ============================================================ column/page inventory */
@@ -203,10 +221,10 @@ let visibleColumns = [];
 function rColumns(){
   const a = DATA.columns;
   const headings = [["decision","Deletion assessment"],["usedInReport","Used in report"],
-    ["table","Table"],["column","Column"],["page","Report page"],["pageUsage","Page usage"],
+    ["table","Table"],["column","Column"],["report","Report"],["page","Report page"],["pageUsage","Page usage"],
     ["pageMeasures","Measures on this page"],["reason","Evidence & source"]];
   return `<h1>Which columns are used?</h1>
-    <p class="sub">One row per column and page. Columns with no page usage remain in the list.</p>
+    <p class="sub">One row per report, page and column. Usage is specific to that page; deletion assessment covers all detected dependencies.</p>
     <div class="grid c4" style="margin-top:1rem">${[["Columns",a.columnCount],["Used in report",a.counts["Used in report"]||0],
       ["Deletion candidates",a.counts["Deletion candidate"]||0],["Need review",a.counts.Review||0]].map(([label,n])=>
       `<div class="card stat"><div class="big">${num(n)}</div><div class="lbl">${label}</div></div>`).join("")}</div>
@@ -219,13 +237,13 @@ function rColumns(){
         <option value="">All assessments</option><option>Keep</option><option>Deletion candidate</option><option>Review</option></select>
       <select id="column-used" class="search" style="width:auto;margin:0" aria-label="Filter report usage" onchange="filterColumns()">
         <option value="">All report usage</option><option value="Yes">Used in report</option><option value="Not detected">No report usage detected</option><option value="Unknown">Usage unknown</option></select>
-      <select id="column-page" class="search" style="width:auto;margin:0;max-width:240px" aria-label="Filter report page" onchange="filterColumns()">
+      <select id="column-page" class="search" style="width:auto;margin:0;max-width:240px" aria-label="Filter report page" onchange="setPageScope(this.value)">
         <option value="*">All pages</option><option value="">No specific page</option>
         ${(R?.pages||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.id)})</option>`).join("")}</select>
       <button class="chip" onclick="downloadColumnCsv()">Export filtered CSV</button>
     </div>
     <p id="column-count" class="mut" aria-live="polite" style="margin-bottom:.5rem"></p>
-    <div class="column-scroll"><table class="t"><thead><tr>${headings.map(([key,title])=>
+    <div class="column-scroll"><table class="t column-inventory"><thead><tr>${headings.map(([key,title])=>
       `<th data-column-sort="${key}"><button class="xl" onclick="sortColumns('${key}')">${title}</button></th>`).join("")}</tr></thead>
       <tbody id="column-rows"></tbody></table></div>`;
 }
@@ -234,7 +252,7 @@ function filterColumns(){
   const assessment = document.getElementById("column-assessment").value;
   const used = document.getElementById("column-used").value;
   const page = document.getElementById("column-page").value;
-  visibleColumns = DATA.columns.rows.filter(r=>(!q||Object.values(r).join(" ").toLowerCase().includes(q)) &&
+  visibleColumns = DATA.columns.rows.filter(inPageScope).filter(r=>(!q||Object.values(r).join(" ").toLowerCase().includes(q)) &&
     (!assessment||r.decision===assessment) && (!used||r.usedInReport===used) && (page==="*"||r.pageId===page));
   const value = r=>String(r[columnSort.key]??"");
   visibleColumns.sort((a,b)=>columnSort.direction*value(a).localeCompare(value(b),undefined,{numeric:true}) ||
@@ -246,7 +264,7 @@ function filterColumns(){
   document.getElementById("column-rows").innerHTML = visibleColumns.map(r=>`<tr>
     <td><span class="badge ${r.decision==='Keep'?'b-direct':r.decision==='Review'?'b-warn':'b-info'}">${esc(r.decision)}</span></td>
     <td>${esc(r.usedInReport)}</td><td>${esc(r.table)}</td><td><b>${esc(r.column)}</b></td>
-    <td>${esc(r.page)||'—'}${r.pageId?`<div class="mut">${esc(r.pageId)}</div>`:''}</td><td>${esc(r.pageUsage)}</td>
+    <td>${esc(r.report)}</td><td>${esc(r.page)||esc(r.pageScope)}${r.pageId?`<div class="mut">${esc(r.pageId)}</div>`:''}</td><td>${esc(r.pageUsage)}</td>
     <td>${list(r.pageMeasures)}</td><td><details><summary>${esc(r.reason)}</summary><div class="body">
     <b>Page evidence</b><p>${list(r.evidence)}</p><b>All dependent measures</b><p>${list(r.usedByMeasures)}</p>
     <b>Dependent calculations</b><p>${list(r.usedByCalculations)}</p><b>Model dependencies</b><p>${list(r.modelDependencies)}</p>
@@ -254,7 +272,7 @@ function filterColumns(){
     <b>Source column (model input)</b><p>${esc(r.sourceColumn)||'Unknown'}</p>
     ${r.expression?`<b>Column expression</b><pre class="code">${esc(r.expression)}</pre>`:''}
     <p class="mut">${esc(r.sourceNote)}</p>${r.reviewNotes.length?`<b>Review notes</b><p>${list(r.reviewNotes)}</p>`:''}
-    </div></details></td></tr>`).join("") || '<tr><td colspan="8">No columns match these filters.</td></tr>';
+    </div></details></td></tr>`).join("") || '<tr><td colspan="9">No columns match these filters.</td></tr>';
 }
 function sortColumns(key){
   columnSort = {key,direction:columnSort.key===key?-columnSort.direction:1};
@@ -351,22 +369,11 @@ function drawLineage(){
   if(!board) return;
   // group lineage rows into source nodes, table nodes, page nodes
   const srcKey = r => [r.sourceType, r.server, r.database].filter(Boolean).join(" · ") || r.sourceType;
-  const sources = [...new Map(L.lineage.map(r=>[srcKey(r), {key:srcKey(r), type:r.sourceType}])).values()];
-  const tables = M.tables.map(t=>({name:t.name, usage:usageOf(t.name), type:t.tableType}));
-  const pages = R.pages.map(p=>p.name);
+  const sources = [...new Map(L.lineage.filter(r=>tableInScope(r.table)).map(r=>[srcKey(r), {key:srcKey(r), type:r.sourceType}])).values()];
+  const tables = scopedTables().map(t=>({name:t.name, usage:usageOf(t.name), type:t.tableType}));
+  const pages = scopedPages();
   const edgesST = L.lineage.map(r=>({s:srcKey(r), t:r.table}));
-  const edgesTP = [];
-  for(const u of L.tableUsage){
-    const pageSet = new Set();
-    for(const w of u.whereUsed){
-      const page = w.split(" / ")[0].replace(/^(Page|Visual|Report) filter — /,"");
-      const match = pages.find(p=>w.startsWith(p) || page===p);
-      if(match) pageSet.add(match);
-      if(w.startsWith("Report filter")) pageSet.add("(entire report)");
-    }
-    for(const p of pageSet) edgesTP.push({t:u.table, p});
-  }
-  if(edgesTP.some(e=>e.p==="(entire report)")) pages.push("(entire report)");
+  const edgesTP = (L.tablePages||[]).filter(r=>r.pageId).map(r=>({t:r.table,p:r.pageId}));
 
   const rowH = 34, colW = 300, pad = 14;
   const H = Math.max(sources.length, tables.length, pages.length)*rowH + pad*2;
@@ -382,15 +389,15 @@ function drawLineage(){
     svg += edge(206, yOf(si,sources.length), colW+8, yOf(ti,tables.length), `e-s-${slug(e.s)} e-t-${slug(e.t)}`);
   });
   edgesTP.forEach(e=>{
-    const ti=tables.findIndex(t=>t.name===e.t), pi=pages.indexOf(e.p);
+    const ti=tables.findIndex(t=>t.name===e.t), pi=pages.findIndex(p=>p.id===e.p);
     if(ti<0||pi<0) return;
-    svg += edge(colW+206, yOf(ti,tables.length), colW*2+8, yOf(pi,pages.length), `e-t-${slug(e.t)} e-p-${slug(e.p)}`);
+    svg += edge(colW+206, yOf(ti,tables.length), colW*2+8, yOf(pi,pages.length), `e-t-${slug(e.t)} e-p-${pageKey(e.p)}`);
   });
   // nodes
   const node = (x,y,w,label,fill,stroke,id,extra="")=>`<g class="lin-node" id="${id}" ${extra}><rect x="${x}" y="${y-12}" width="${w}" height="24" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/><text x="${x+8}" y="${y+4}" fill="var(--ink)">${esc(label.length>30?label.slice(0,29)+"…":label)}</text></g>`;
   sources.forEach((s,i)=>{ svg += node(8, yOf(i,sources.length), 198, s.key, "var(--panel2)", "var(--line)", nodeId("s",s.key), `onclick="linHl('s','${slug(s.key)}')"`); });
   tables.forEach((t,i)=>{ svg += node(colW+8, yOf(i,tables.length), 198, t.name, "#fff", uColor(t.usage), nodeId("t",t.name), `onclick="linHl('t','${slug(t.name)}','${esc(t.name).replace(/'/g,"\\'")}')"`); });
-  pages.forEach((p,i)=>{ svg += node(colW*2+8, yOf(i,pages.length), 198, p, "var(--panel2)", "var(--line)", nodeId("p",p), `onclick="linHl('p','${slug(p)}')"`); });
+  pages.forEach((p,i)=>{ svg += node(colW*2+8, yOf(i,pages.length), 198, `${p.name} [${p.id}]`, "var(--panel2)", "var(--line)", 'ln-p-'+pageKey(p.id), `onclick="linHl('p','${pageKey(p.id)}')"`); });
   ["Sources","Model tables","Report pages"].forEach((h,i)=>{ svg += `<text x="${i*colW+8}" y="${12}" font-size="10" fill="var(--ink3)" style="text-transform:uppercase;letter-spacing:.1em;font-family:var(--mono)">${h}</text>`; });
   svg += "</svg>";
   board.innerHTML = svg;
@@ -406,22 +413,20 @@ function linHl(col, key, tableName){
 
 /* ============================================================ usage */
 function rUsage(){
-  const rows = L.tableUsage.map(u=>`
-    <tr data-u="${u.usage}">
-      <td>${tblLink(u.table)}</td>
-      <td>${typeBadge(u.tableType)}</td>
-      <td>${usageBadge(u.usage)}</td>
-      <td>${u.usage==="direct" ? `<span class="mut">${u.directFields.slice(0,6).map(f=>`<span class="ref">${esc(f)}</span>`).join(" ")}${u.directFields.length>6?` +${u.directFields.length-6} more`:""}</span>`
-          : u.usage==="via measures" ? `<span class="mut">through ${u.viaMeasures.map(meaLink).join(", ")}</span>`
-          : u.usage==="possible" ? `<span class="mut">active relationship to ${u.relatedUsedTables.map(tblLink).join(", ")}</span>`
-          : `<span class="mut">nothing in the report reaches this table</span>`}</td>
-      <td class="mut">${u.whereUsed.slice(0,3).map(esc).join("<br>")}${u.whereUsed.length>3?`<br>+${u.whereUsed.length-3} more`:""}</td>
-    </tr>`).join("");
-  return `${coupler()}<h1>Table usage</h1>
-  <p class="sub">How the report actually consumes the model. <b>Direct</b> = a field is bound in a visual, filter, or bookmark. <b>Via measures</b> = reached only inside the DAX of measures the report uses. <b>Possible</b> = connected by an active relationship to a used table, so it may participate in filtering. <b>No references</b> = a removal candidate — verify no other report or Excel connection uses this model first.</p>
-  <div class="filter-row">${["all","direct","via measures","possible","none"].map(u=>`<button class="chip ${u==="all"?"on":""}" onclick="fUsage('${u}',this)">${u==="none"?"no references":u}</button>`).join("")}</div>
-  <table class="t"><thead><tr><th>Table</th><th>Type</th><th>Verdict</th><th>Evidence</th><th>Where used</th></tr></thead><tbody id="usage-body">${rows}</tbody></table>`;
+  const rows = DATA.columns.tablePages.filter(inPageScope).map(r=>{
+    const category = r.kinds.includes('Direct')?'direct':r.kinds.some(k=>['Via measures','Via calculations','Table expression'].includes(k))?'via measures':r.kinds.length?'possible':'none';
+    return `<tr data-u="${category}"><td>${esc(r.report)}</td><td>${esc(r.page)||esc(r.scope)}<div class="mut">${esc(r.pageId)}</div></td>
+      <td>${tblLink(r.table)}</td><td>${esc(r.usage)}</td><td>${r.fields.map(esc).join(', ')||'—'}
+      ${r.measures.length?`<div class="mut">Measures: ${r.measures.map(esc).join(', ')}</div>`:''}</td>
+      <td class="mut">${r.evidence.map(esc).join('<br>')||'No page reference detected'}</td></tr>`;
+  }).join('');
+  return `${coupler()}<h1>Table usage by report page</h1>
+    <p class="sub">Each verdict applies to the named page. A missing page reference does not establish that a table can be deleted.</p>
+    <div class="filter-row">${['all','direct','via measures','possible','none'].map(u=>`<button class="chip ${u==='all'?'on':''}" onclick="fUsage('${u}',this)">${u==='none'?'no page references':u}</button>`).join('')}</div>
+    <table class="t"><thead><tr><th>Report</th><th>Report page</th><th>Table</th><th>Page usage</th><th>Fields / measures</th><th>Evidence</th></tr></thead>
+    <tbody id="usage-body">${rows}</tbody></table>`;
 }
+
 function fUsage(u, chip){
   document.querySelectorAll(".filter-row .chip").forEach(c=>c.classList.remove("on"));
   chip.classList.add("on");
@@ -431,16 +436,9 @@ function fUsage(u, chip){
 /* ============================================================ pages */
 function rPages(){
   if(!R.pages.length) return `${coupler()}<div class="empty"><b>No pages found.</b><br>Check that the .Report folder contains definition/pages/.</div>`;
-  const cards = R.pages.map(p=>{
-    const feeds = {};
-    for(const v of p.visuals) for(const f of v.fields){
-      const t = f.table || "?";
-      (feeds[t] = feeds[t] || new Set()).add(f.field);
-    }
-    for(const f of p.filters) if(f.table) (feeds[f.table]=feeds[f.table]||new Set()).add(f.field);
-    const feedRows = Object.entries(feeds).map(([t,fields])=>{
-      const u = usageOf(t);
-      return `<tr><td>${has.model?tblLink(t):`<span class="ref">${esc(t)}</span>`} ${u?usageBadge(u):""}</td><td class="mut">${[...fields].map(f=>`<span class="ref">${esc(f)}</span>`).join(" ")}</td></tr>`;
+  const cards = scopedPages().map(p=>{
+    const feedRows = (p.feeds||[]).map(({table:t,fields,usage})=>{
+      return `<tr><td>${has.model?tblLink(t):`<span class="ref">${esc(t)}</span>`}<div class="mut">${esc(usage)}</div></td><td class="mut">${fields.map(f=>`<span class="ref">${esc(f)}</span>`).join(" ")}</td></tr>`;
     }).join("");
     const visRows = p.visuals.map(v=>`
       <tr><td><b>${esc(v.title||v.type)}</b>${v.title?`<div class="mut">${esc(v.type)}</div>`:""}</td>
@@ -450,8 +448,8 @@ function rPages(){
         return `<span class="ref" title="${esc(f.context)}">${esc(label)}${kind}</span>`;
       }).join(" ")||"—"}</td>
       <td class="mut">${v.filters.length? v.filters.map(f=>esc(f.field||"?")).join(", "):"—"}</td></tr>`).join("");
-    return `<details id="pg-${slug(p.name)}">
-      <summary>${esc(p.name)} ${p.hidden?'<span class="badge b-hidden">hidden</span>':""} ${p.isActive?'<span class="badge b-other">landing page</span>':""}
+    return `<details id="pg-${pageKey(p.id)}">
+      <summary>${esc(p.label)} ${p.hidden?'<span class="badge b-hidden">hidden</span>':""} ${p.isActive?'<span class="badge b-other">landing page</span>':""}
         <span class="mut" style="font-weight:400;margin-left:auto">${p.visuals.length} visuals</span></summary>
       <div class="body">
         <h2 style="margin-top: .6rem">What feeds this page</h2>
@@ -472,7 +470,7 @@ function rFilters(){
   if(!fs.length) return `${coupler()}<h1>Filters</h1><div class="empty"><b>No filters found</b> at report, page, or visual level.</div>`;
   const row = f=>`<tr>
     <td><span class="badge b-other">${esc(f.level)}</span></td>
-    <td class="mut">${esc(f.target)}</td>
+    <td class="mut">${esc(f.pageLabel)}<div>${esc(f.target)}</div></td>
     <td>${f.table&&has.model?tblLink(f.table):`<span class="ref">${esc(f.table||"?")}</span>`}<span class="ref">[${esc(f.field||"?")}]</span></td>
     <td class="mut">${esc(f.filterType)}</td>
     <td class="mut">${f.raw?esc(f.raw):"—"}</td></tr>`;
@@ -493,7 +491,7 @@ function rManifest(){
   <p class="sub">${has.linked
     ? "Every field the report binds, resolved against the model. Broken bindings are flagged in red and also listed under Warnings."
     : "Every field the report demands. Without a model these are <b>unresolved requirements</b> — a rebuild against a new model must provide each one. \u201Cmeasure\u201D / \u201Ccolumn\u201D below reflects only how the report referenced the field, not model-confirmed truth."}</p>
-  <input class="search" placeholder="Search fields…" oninput="fMan(this.value)">
+  <input id="manifest-search" class="search" placeholder="Search fields…" oninput="fMan(this.value)">
   <table class="t"><thead><tr><th>Field</th><th>Referenced as</th>${has.linked?"<th>Resolved</th>":""}<th>Used in</th></tr></thead>
   <tbody>${man.map(e=>`<tr data-s="${esc((e.table||"")+" "+e.field).toLowerCase()}">
     <td><span class="ref">${esc(e.table||"?")}[${esc(e.field)}]</span></td>
@@ -508,39 +506,39 @@ function fMan(q){
 }
 
 /* ============================================================ tables */
-const sourceCsvFields = [["report","Report"],["table","Model table"],["usage","Report usage"],
+const sourceCsvFields = [["report","Report"],["page","Report page"],["pageId","Page ID"],["pageScope","Page scope"],["table","Model table"],["usage","Page usage"],
+  ["pageFields","Fields on this page"],["pageMeasures","Measures on this page"],["pageEvidence","Page evidence"],
   ["partition","Partition"],["server","Server"],["database","Database"],
   ["sourceType","Source type"],["objectType","Object type"],["object","Source object"],
   ["queryKind","Query language"],["query","Query"],["notes","Notes"],["expression","Partition expression"]];
-function sourceRows(q=''){
+function sourceRows(q='', page='*'){
   q=q.trim().toLowerCase();
-  return DATA.tableSources.filter(r=>!q||Object.values(r).join(' ').toLowerCase().includes(q));
+  return DATA.tableSources.filter(inPageScope).filter(r=>(!q||Object.values(r).join(' ').toLowerCase().includes(q))&&(page==='*'||r.pageId===page));
 }
 function rTableSources(){
-  return `<h2>Report → table → source</h2>
-    <p class="sub">The report column names the supplied report; report usage shows whether a dependency was detected.
-    Each partition has its own row. Unknown connection details are left unresolved.</p>
+  return `<h2>Report → page → table → source</h2>
+    <p class="sub">Each row identifies usage on one report page, for one table partition. Blank pages mean no resolved page usage, not usage on every page.</p>
     <button class="chip" style="margin:.7rem 0" onclick="downloadSourceCsv()">Export source summary CSV</button>
     <div class="column-scroll" style="margin-bottom:1.2rem"><table class="t" id="table-source-summary">
-    <thead><tr><th>Report</th><th>Model table / partition</th><th>Report usage</th><th>Server</th><th>Database</th><th>Source type</th><th>Source object / query</th></tr></thead>
-    <tbody>${DATA.tableSources.map((r,i)=>`<tr data-source-index="${i}">
-      <td>${esc(r.report)}</td><td><b>${esc(r.table)}</b><div class="mut">${esc(r.partition)||'No partition'}</div></td>
-      <td>${esc(r.usage)}</td><td>${esc(r.server)||'Unknown / not applicable'}</td><td>${esc(r.database)||'Unknown / not applicable'}</td>
+    <thead><tr><th>Report</th><th>Report page</th><th>Model table / partition</th><th>Page usage</th><th>Server</th><th>Database</th><th>Source type</th><th>Source object / query</th></tr></thead>
+    <tbody>${DATA.tableSources.map((r,i)=>inPageScope(r)?`<tr data-source-index="${i}">
+      <td>${esc(r.report)}</td><td>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)}</div></td><td><b>${esc(r.table)}</b><div class="mut">${esc(r.partition)||'No partition'}</div></td>
+      <td>${esc(r.usage)}${r.pageMeasures.length?`<div class="mut">${r.pageMeasures.map(esc).join(', ')}</div>`:''}</td><td>${esc(r.server)||'Unknown / not applicable'}</td><td>${esc(r.database)||'Unknown / not applicable'}</td>
       <td>${esc(r.objectType)}<div class="mut">${esc(r.sourceType)}</div></td>
       <td>${r.object?`<span class="ref">${esc(r.object)}</span>`:''}
       ${r.query?`<details><summary>Show ${esc(r.queryKind)} query</summary><div class="body"><pre class="code">${esc(r.query)}</pre></div></details>`:''}
       ${!r.object&&!r.query?'No source object or expression found':''}
       ${r.notes.length?`<p class="mut">${r.notes.map(esc).join('<br>')}</p>`:''}</td>
-    </tr>`).join('')}</tbody></table></div>`;
+    </tr>`:'').join('')}</tbody></table></div>`;
 }
 function downloadSourceCsv(){
-  const rows=sourceRows(document.getElementById('table-search').value);
+  const rows=sourceRows(document.getElementById('table-search').value,document.getElementById('table-page').value);
   const url=URL.createObjectURL(new Blob([inventoryCsv(rows,sourceCsvFields)],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');a.href=url;a.download='report-table-sources.csv';
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function rTables(){
-  const cards = M.tables.map(t=>{
+  const cards = scopedTables().map(t=>{
     const u = usageOf(t.name);
     const srcs = [...new Set(t.partitions.map(p=>{
       const s=p.source; return [s.sourceType,s.server,s.database,s.schema&&s.object?`${s.schema}.${s.object}`:s.object].filter(Boolean).join(" · ");
@@ -549,7 +547,8 @@ function rTables(){
       <td><span class="ref">${esc(c.name)}</span>${c.isCalculated?' <span class="badge b-other">calc</span>':""}${c.isHidden?' <span class="badge b-hidden">hidden</span>':""}</td>
       <td class="mut">${esc(c.dataType)}</td>
       <td class="mut">${has.linked ? esc(c.reportUsage) : (c.internallyReferenced ? "internally referenced" : "no internal references")}</td>
-      <td class="mut">${c.dependsOn.length?c.dependsOn.map(d=>`<span class="ref">${esc(d)}</span>`).join(" "):"—"}</td></tr>`;
+      <td class="mut">${c.dependsOn.length?c.dependsOn.map(d=>`<span class="ref">${esc(d)}</span>`).join(" "):"—"}</td>
+      <td class="mut">${(DATA.columns?.rows||[]).filter(inPageScope).filter(r=>r.table===t.name&&r.column===c.name).map(r=>`${esc(pageLabel(r))}: ${esc(r.pageUsage)}`).join('<br>')||'No page reference'}</td></tr>`;
     return `<details id="tbl-${slug(t.name)}">
       <summary>${esc(t.name)} ${typeBadge(t.tableType)} ${t.isHidden?'<span class="badge b-hidden">hidden</span>':""} ${u?usageBadge(u):""}
         <span class="mut" style="font-weight:400;margin-left:auto">${t.columns.length} cols · ${t.measures.length} measures</span></summary>
@@ -559,7 +558,7 @@ function rTables(){
         <div class="pill-list">${srcs.map(s=>`<span class="ref">${esc(s)}</span>`).join("")||'<span class="mut">—</span>'}</div>
         ${t.partitions.some(p=>p.source.nativeQuery)?`<p class="mut" style="margin-top:.3rem">⚠ contains a native SQL query — transformations happen upstream of Power Query.</p>`:""}
         <h2>Columns</h2>
-        <table class="t"><thead><tr><th>Column</th><th>Type</th><th>Usage</th><th>Depends on</th></tr></thead><tbody>${t.columns.map(colRow).join("")}</tbody></table>
+        <table class="t"><thead><tr><th>Column</th><th>Type</th><th>Usage (all pages)</th><th>Depends on</th><th>Usage by report page</th></tr></thead><tbody>${t.columns.map(colRow).join("")}</tbody></table>
         ${t.measures.length?`<h2>Measures on this table</h2><div class="pill-list">${t.measures.map(m=>`<span class="ref">${meaLink(m.name)}</span>`).join("")}</div>`:""}
         ${t.hierarchies.length?`<h2>Hierarchies</h2><div class="mut">${t.hierarchies.map(h=>`<b>${esc(h.name)}</b>: ${h.levels.map(esc).join(" → ")}`).join("<br>")}</div>`:""}
         <h2>Partition M / expression</h2>
@@ -569,26 +568,29 @@ function rTables(){
   }).join("");
   return `${coupler()}<h1>Tables</h1>
   <input id="table-search" class="search" placeholder="Search tables, reports or sources…" aria-label="Search tables, reports or sources" oninput="fTbl(this.value)">
+  <select id="table-page" class="search" aria-label="Filter tables by report page" onchange="setPageScope(this.value)">
+    <option value="*">All pages</option><option value="">No specific page</option>
+    ${(R?.pages||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}</select>
   ${rTableSources()}
   <h2>Table details</h2>
   <div id="tbl-list">${cards}</div>`;
 }
 function fTbl(q){
   q=q.toLowerCase();
-  const visibleRows = new Set(sourceRows(q));
+  const visibleRows = new Set(sourceRows(q,document.getElementById('table-page').value));
   const matches = new Set([...visibleRows].map(r=>r.table));
   document.querySelectorAll('[data-source-index]').forEach(tr=>{
     const row=DATA.tableSources[Number(tr.dataset.sourceIndex)];
     tr.style.display=visibleRows.has(row)?'':'none';
   });
-  document.querySelectorAll("#tbl-list details").forEach(d=>{
+  document.querySelectorAll("#tbl-list > details").forEach(d=>{
     d.style.display = [...matches].some(name=>d.id==='tbl-'+slug(name))?'':'none';
   });
 }
 
 /* ============================================================ measures */
 function rMeasures(){
-  const cards = M.measures.map(m=>`
+  const cards = M.measures.filter(m=>pageScope==='*'||(m.pageUsage||[]).some(inPageScope)).map(m=>`
     <details id="mea-${slug(m.name)}">
       <summary>${esc(m.name)}
         ${has.linked ? (m.usedInReport?'<span class="badge b-direct">used in report</span>':'<span class="badge b-none">not used in report</span>') : ""}
@@ -600,18 +602,18 @@ function rMeasures(){
           <tr><td class="mut" style="width:170px">Depends on measures</td><td>${m.dependsOnMeasures.map(meaLink).join(", ")||"—"}</td></tr>
           <tr><td class="mut">Depends on columns</td><td>${m.dependsOnColumns.map(c=>`<span class="ref">${esc(c)}</span>`).join(" ")||"—"}</td></tr>
           <tr><td class="mut">All tables touched</td><td>${m.allTables.map(tblLink).join(", ")||"—"}</td></tr>
-          ${has.linked&&m.usedBy.length?`<tr><td class="mut">Used by</td><td class="mut">${m.usedBy.map(esc).join("<br>")}</td></tr>`:""}
+          ${m.pageUsage?.length?`<tr><td class="mut">Usage by report page</td><td class="mut">${m.pageUsage.filter(inPageScope).map(r=>`${esc(pageLabel(r))}: ${esc(r.usage)}`).join("<br>")}</td></tr>`:""}
           ${m.formatString?`<tr><td class="mut">Format</td><td><span class="ref">${esc(m.formatString)}</span></td></tr>`:""}
         </tbody></table>
       </div>
     </details>`).join("");
   return `${coupler()}<h1>Measures</h1>
-  <input class="search" placeholder="Search measures…" oninput="fMea(this.value)">
+  <input id="measure-search" class="search" placeholder="Search measures…" oninput="fMea(this.value)">
   <div id="mea-list">${cards}</div>`;
 }
 function fMea(q){
   q=q.toLowerCase();
-  document.querySelectorAll("#mea-list details").forEach(d=>{
+  document.querySelectorAll("#mea-list > details").forEach(d=>{
     d.style.display = d.querySelector("summary").textContent.toLowerCase().includes(q)?"":"none";
   });
 }
@@ -663,7 +665,7 @@ function drawERD(){
 /* ============================================================ sources */
 function rSources(){
   const groups = {};
-  for(const t of M.tables) for(const p of t.partitions){
+  for(const t of scopedTables()) for(const p of t.partitions){
     const s = p.source;
     const key = [s.sourceType, s.server, s.database].filter(Boolean).join(" · ") || s.sourceType;
     (groups[key] = groups[key] || []).push({table:t.name, part:p});
@@ -685,7 +687,7 @@ function rSources(){
 
 /* ============================================================ security */
 function rSecurity(){
-  if(!M.roles.length) return `${coupler()}<h1>Security</h1><div class="empty"><b>No RLS roles defined.</b><br>Every user with access sees all data, subject to workspace permissions.</div>`;
+  if(!M.roles.length) return `${coupler()}<h1>Security</h1><div class="empty"><b>No RLS roles found in this extract.</b><br>Service permissions and other access controls are outside this analysis.</div>`;
   return `${coupler()}<h1>Security (RLS)</h1>
   ${M.roles.map(r=>`<div class="card">
     <div style="font-weight:650">${esc(r.name)} <span class="badge b-other">${esc(r.modelPermission)}</span></div>
@@ -711,6 +713,7 @@ function rWarnings(){
 const RENDER = {columns:rColumns, overview:rOverview, lineage:rLineage, usage:rUsage, pages:rPages,
   filters:rFilters, manifest:rManifest, tables:rTables, measures:rMeasures,
   rels:rRels, sources:rSources, security:rSecurity, warnings:rWarnings};
+/*__EXPLORER_JS__*/
 buildNav();
 switchTab(has.model ? "columns" : "overview");
 </script>

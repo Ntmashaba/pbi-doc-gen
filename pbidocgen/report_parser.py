@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from .page_references import attach_report_locations
 
 
 def _load(path: Path):
@@ -322,6 +323,7 @@ def parse_report(report_path: str | Path) -> dict:
             "name": display,
             "hidden": hidden,
             "isActive": page_dir.name == active,
+            "width": page_json.get("width"), "height": page_json.get("height"),
             "visuals": visuals_out,
             "filters": page_filters,
             "otherFields": page_fields,
@@ -345,40 +347,12 @@ def parse_report(report_path: str | Path) -> dict:
                 "fields": refs,
             })
 
-    # ---- requirements manifest -----------------------------------------
-    manifest: dict[tuple, dict] = {}
-
-    def note(table, field, kind, where):
-        if not field:
-            return
-        key = (table or "?", field, kind)
-        entry = manifest.setdefault(key, {
-            "table": table, "field": field, "kind": kind, "usedIn": [],
-        })
-        if where not in entry["usedIn"]:
-            entry["usedIn"].append(where)
-
-    for f in report_filters:
-        note(f["table"], f["field"], f["kind"], "Report filter")
-    for page in pages_out:
-        for f in page["filters"]:
-            note(f["table"], f["field"], f["kind"],
-                 f"{f['level'].capitalize()} filter — {f['target']}")
-        for vis in page["visuals"]:
-            label = f"{page['name']} / {vis['title'] or vis['type']}"
-            for r in vis["fields"]:
-                note(r["table"], r["field"], r["kind"], label)
-    for bm in bookmarks_out:
-        for r in bm["fields"]:
-            note(r["table"], r["field"], r["kind"], f"Bookmark: {bm['name']}")
-
-    return {
-        "name": root.name.replace(".Report", ""),
+    return attach_report_locations({
+        "name": (root.parent.name if root.name == "definition" else root.name).replace(".Report", ""),
         "pages": pages_out,
         "reportFilters": report_filters,
         "otherFields": report_fields,
         "bookmarks": bookmarks_out,
-        "manifest": sorted(manifest.values(),
-                           key=lambda e: (e["table"] or "", e["field"])),
+        "manifest": [],
         "warnings": warnings,
-    }
+    })

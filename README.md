@@ -6,18 +6,71 @@ The goal is onboarding: a Power BI developer who has never seen the report befor
 
 No installation beyond Python. No third-party packages. One command, one file out.
 
+## Explore usage by report page
+
+The shared **Report page** selector stays selected as you move between Columns,
+Tables, Usage, Lineage, Pages, Filters, Field manifest, Measures, Sources and the
+new exploration views. The report name is always shown; each extract currently
+contains one supplied report. Page IDs distinguish duplicate page names.
+Search inputs, column sorting and expanded table/measure details are retained
+while switching sections within the open document.
+
+| View | What it answers | How to use it |
+|---|---|---|
+| **Usage matrix** | Which tables and columns feed each page? | Expand a table, search for a column, and select a page cell to inspect its evidence. |
+| **Impact inspector** | What would a column or measure change affect? | Choose a field to see downstream calculations and explicit paths to page/visual bindings. Follow **Reads these fields** upstream to inspect source columns. |
+| **Page layout** | Which saved visual is using a field? | Select a visual in the schematic or its accessible list to inspect bindings and filters. Hidden pages/visuals are labelled. |
+| **Cleanup review** | Which columns warrant removal review, and why? | Start with **Deletion candidate**, inspect dependencies and uncertainty, and export evidence at column/page grain. |
+| **Compare extracts** | What changed between two extractions? | Open the newer HTML, select the earlier `--json` file, and inspect added, removed or changed definitions with affected pages. |
+
+For example: select a page, open **Usage matrix**, expand a table and select a
+column's cell. Its evidence opens in a side panel. **Trace dependency paths**
+shows the column → calculation/measure → visual relationship. Use **Cleanup
+review** to assess unreferenced columns across the complete supplied extract.
+
+**Scope is deliberate:** page filters restrict usage and usage exports. Cleanup
+assessments, overview counts, relationship structure, security and warnings cover
+the whole extract and are labelled accordingly. A column absent from the selected
+page may still be needed elsewhere. The cleanup CSV retains one row per column
+and resolved page, including a blank page for columns without resolved page use.
+
+Dependency paths are derived from detected explicit DAX references, including
+calculated columns and dynamic format expressions. One shortest path is shown
+per binding; alternative routes, whole-table semantics, relationships and runtime
+filter context are not claimed as precise column paths. The JSON contains these
+nodes, reference edges and consumer locations in `columns.dependencyGraph`.
+A measure's home table is organisational; its data dependencies and DAX determine
+how it responds to filters. The agent Markdown now explains that distinction.
+
+Page layout uses saved page/visual geometry; it does not execute or reproduce
+charts. Missing geometry is shown in the visual list. Comparison reads JSON
+locally, with no upload, and compares definitions rather than data values. Generate
+each snapshot using `--json`, then load the earlier file in the newer HTML.
+Comparison includes sources, DAX, columns, hierarchies, relationships, RLS,
+bookmarks, filters, pages and visuals. Renamed objects generally appear as removed
+and added; page renames retain identity when the page ID is stable. Extracts from
+different models/reports or extraction modes display a comparability notice.
+Older extracts without page usage cannot provide complete affected-page evidence
+for removed model objects. Changes without a resolved page remain visible as
+model/unassigned scope; the comparison CSV expands affected pages into rows.
+
+The generated HTML remains one offline file: `explorer.js` and `explorer.css`
+are embedded during generation, so you do not need to distribute them beside it.
+
 ## Which columns are used, and which can be deleted?
 
 ### Report, table and source summary
 
-The **Tables** view begins with a searchable **Report → table → source** summary:
+The **Tables** view begins with a searchable **Report → page → table → source** summary:
 
-| Report | Model table / partition | Report usage | Server | Database | Source type | Source object / query |
+| Report | Report page / ID | Model table / partition | Page usage | Server | Database | Source object / query |
 |---|---|---|---|---|---|---|
-| Supplied report name | Model table and partition | Used / possible dependency / no usage detected | Connection server | Source database | Table, view, SQL query, or other source | Schema-qualified object or expandable query text |
+| Supplied report name | Individual page and stable ID | Model table and partition | Direct / via measures / possible relationship dependency | Connection server | Source database | Schema-qualified object or expandable query text |
 
-There is one row per model table partition, so archive/live sources remain
-separate. Tables without a partition remain visible. **Export source summary
+There is one row per **report + page + model table + partition**, so usage on
+different pages and archive/live sources remain separate. Filter by individual
+page in Tables. Tables without a partition or any detected page usage remain
+visible with a blank/unresolved page, not duplicated onto unrelated pages. **Export source summary
 CSV** exports the filtered rows with full query text; the same rows are available
 in JSON as `tableSources`. Existing table details remain below the summary.
 
@@ -27,13 +80,13 @@ named model connections. Dynamic SQL and ambiguous multi-source M expressions
 show the full Power Query expression for inspection. Unknown server/database
 values remain unknown; queries are never executed. Navigation metadata supplies
 the object type where available; otherwise the label is **Table or view**.
-The report name identifies the supplied report, while **Report usage** indicates
-whether usage was detected. Model-only runs show **Usage unknown**.
+The report name identifies the supplied report, while **Page usage** indicates
+how that particular page uses the table. Model-only runs show **Usage unknown**.
 
 ### Column usage and deletion assessment
 
 The HTML now opens on **Columns** when a model is supplied. It lists **one row
-per column and report page**, with deletion assessment and usage first. A column
+per report, column and page**, with separate Report, Page and Page ID fields. A column
 used on four pages has four rows. A column with no page usage still has one row
 with a blank page, so removal candidates remain visible. Page IDs distinguish
 pages with identical display names. Counts at the top count distinct columns.
@@ -77,8 +130,14 @@ blank page; the tool does not guess which page a bookmark affects.
 This remains static analysis, not a full DAX/M engine. Whole-table dependencies
 are review blockers rather than claims that every column is read. Calculation
 items, field parameters and calculated tables can require additional review of
-runtime behavior. The Columns inventory is included in JSON as `columns`; its
-cleanup assessments are available in HTML and CSV, not in the Word/agent layouts.
+runtime behavior. The same page-level table and column inventories appear in
+HTML, CSV, JSON, Word and agent markdown. JSON includes `columns.tablePages`,
+`columns.measurePages`, `tableSources`, structured manifest `locations`, and
+page-specific `report.filterRows`. Lineage, measure consumers and per-page feeds
+use these stable IDs rather than parsing display labels. Report-level filters
+are attributed to every real page; bookmark references without a resolved page
+remain explicitly unassigned. Per-page usage does not change the model-wide
+scope of deletion assessments.
 
 Run the regression tests with `python -m unittest discover -s tests -v`.
 
@@ -363,7 +422,7 @@ python generate_docs.py --model model.bim --agent
 python generate_docs.py --model model.bim --report Sales.Report --agent docs/Sales.agent.md
 ```
 
-Inside, in reading order: an orientation header stating the mode and its honesty limits; counts; broken bindings (combined mode) before anything else; tables at a glance with type, storage, source, and report-usage verdict; modelling caveats; relationships with a mermaid ERD; a **filter-reachability table** — which tables can slice which over active relationships, so feasibility questions need no graph reasoning; per-table columns; every measure's DAX with resolved dependencies and whether the report uses it; RLS roles; report structure; and the source → table → pages lineage.
+Inside, in reading order: an orientation header stating the mode and its honesty limits; counts; broken bindings (combined mode) before anything else; tables at a glance with type, storage, source, and report-usage verdict; modelling caveats; relationships with a mermaid ERD; a **filter-reachability table** describing active relationship paths, with explicit limits on inferring measure filter behaviour; per-table columns; every measure's DAX with resolved dependencies and whether the report uses it; RLS roles; report structure; and the source → table → pages lineage.
 
 Because it renders from the same consolidated payload as the HTML, JSON, and Word outputs, the agent doc can never disagree with them — one payload, four renderings. A rough token estimate is printed on generation.
 
@@ -392,8 +451,18 @@ pbidocgen/
                             downstream is format-agnostic
     project.py              resolves a .pbip / project folder / artifact
                             folder into the model and report paths
-    template.html           the self-contained interactive documentation app
+    template.html           the interactive documentation template
+    explorer.js             page scope, matrix, impact, layout, cleanup and comparison
+    explorer.css            exploration view styles (embedded into the HTML)
 examples/
     Sales.SemanticModel/    synthetic model.bim for trying the tool
     Sales.Report/           synthetic PBIR report folder
 ```
+
+## Verification
+
+Run `python -m unittest discover -s tests -q`. The suite covers dependency and
+source extraction, consistent page identities across CSV/JSON/Word/Markdown,
+geometry preservation, and generated JavaScript interactions. Node.js is optional
+and required only for the JavaScript checks. Those checks use a DOM adapter;
+they do not replace browser rendering checks or validation against your own PBIP.

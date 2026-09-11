@@ -7,9 +7,11 @@ but static analysis cannot certify all table-expression semantics.
 from __future__ import annotations
 
 import csv
+import json
 import re
 from collections import defaultdict
 from pathlib import Path
+from .page_references import page_ref
 
 SCOPE = ("Scoped to the supplied model and report. Deletion candidates have no detected "
          "references; check other reports, Excel/composite-model consumers and Power Query "
@@ -159,6 +161,10 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
 
     # Key by stable page ID, never parse human labels (page names may contain /).
     page_use = defaultdict(lambda: defaultdict(lambda: {"kinds": set(), "evidence": set(), "measures": set()}))
+    def usage_entry():
+        return {"kinds": set(), "evidence": set(), "fields": set(), "measures": set()}
+    table_page_use = defaultdict(lambda: defaultdict(usage_entry))
+    measure_page_use = defaultdict(lambda: defaultdict(usage_entry))
     report_use = defaultdict(set)
     report_measures = set()
     bookmark_use = defaultdict(set)
@@ -192,11 +198,38 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
             issues.add(f"Unresolved report binding {binding.get('table') or '?'}[{binding.get('field')}]")
         return None
 
-    def consume(binding, page_ids, evidence, bookmark=False):
+    consumers = []
+    node_id = lambda key: json.dumps(key, ensure_ascii=False, separators=(",", ":"))
+
+    def consume(binding, page_ids, evidence, bookmark=False, visual_id=""):
         root = resolve(binding)
         if root is None:
             return
         deps, whole_tables = closures.get(root, (set(), set()))
+        page_ids = list(page_ids)
+        for pid in page_ids or [""]:
+            consumers.append(dict(page_ref(report, pages.get(pid)), node=node_id(root),
+                                  visualId=visual_id, evidence=evidence, bookmark=bookmark))
+        for key in deps | {root}:
+            kind = "Direct" if key == root else "Via measures" if root[0] == "m" else "Via calculations"
+            for page_id in page_ids or [""]:
+                trow = table_page_use[key[1]][page_id]
+                trow["kinds"].add(kind)
+                trow["evidence"].add(evidence)
+                trow["fields"].add(key[2])
+                if root[0] == "m":
+                    trow["measures"].add(label(root))
+                if key in measures:
+                    mrow = measure_page_use[key][page_id]
+                    mrow["kinds"].add(kind)
+                    mrow["evidence"].add(evidence)
+        for table in whole_tables:
+            for page_id in page_ids or [""]:
+                row = table_page_use[table][page_id]
+                row["kinds"].add("Table expression")
+                row["evidence"].add(evidence + ": " + label(root))
+                if root[0] == "m":
+                    row["measures"].add(label(root))
         report_measures.update(label(k) for k in deps | {root} if k in measures)
         affected = deps & columns.keys()
         if root in columns:
@@ -223,7 +256,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                 consume(f, [page_id], f.get("level", "page").capitalize() + " filter or expression: " + page["name"])
             for v in page["visuals"]:
                 for f in v["fields"]:
-                    consume(f, [page_id], f"Visual {v['id']}: {v.get('title') or v['type']}")
+                    consume(f, [page_id], f"Visual {v['id']}: {v.get('title') or v['type']}", visual_id=v["id"])
         for bookmark in report["bookmarks"]:
             for f in bookmark["fields"]:
                 # A bookmark may affect several pages; do not invent a page.
@@ -259,6 +292,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
             sources.append(" / ".join(str(x) for x in [part["name"], src["sourceType"], src.get("server"),
                            src.get("database"), src.get("schema"), src.get("object") or src.get("detail")] if x))
         base = dict(table=table, column=column, decision=decision, reason=explanation,
+                    report=report["name"] if report else "Not supplied",
                     usedInReport="Yes" if report_use[key] else "Not detected" if report else "Unknown",
                     modelDependencies=internal, reviewNotes=review,
                     usedByMeasures=sorted(used_by_measures[key]),
@@ -269,18 +303,60 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         for page_id in sorted(page_use[key]) or [None]:
             use = page_use[key].get(page_id)
             rows.append(dict(base, pageId=page_id or "", page=pages[page_id]["name"] if page_id else "",
+                             pageScope="Page" if page_id else "Bookmark/report scope only" if report_use[key] else "No page usage detected" if report else "Not assessed",
                              pageUsage=" + ".join(sorted(use["kinds"])) if use else
                              "Bookmark/report scope only" if report_use[key] else
                              "Internal only" if internal else "Not assessed" if not report else "No references detected",
                              pageMeasures=sorted(use["measures"]) if use else [],
                              evidence=sorted(use["evidence"]) if use else sorted(report_use[key])))
+    # Track possible relationship dependencies separately on each real page.
+    adjacency = defaultdict(set)
+    for rel in model["relationships"]:
+        if rel["isActive"]:
+            adjacency[rel["fromTable"]].add(rel["toTable"])
+            adjacency[rel["toTable"]].add(rel["fromTable"])
+    for page_id in pages:
+        seeds = {t for t, usage in table_page_use.items() if page_id in usage}
+        reached, todo = set(seeds), list(seeds)
+        while todo:
+            for neighbor in adjacency[todo.pop()] - reached:
+                reached.add(neighbor)
+                todo.append(neighbor)
+        for table in (reached - seeds) & tables.keys():
+            row = table_page_use[table][page_id]
+            row["kinds"].add("Possible relationship dependency")
+            row["evidence"].add("Active relationship path to a table used on this page; verify filter propagation.")
+
+    def flatten(table, page_id, use, **extra):
+        ref = page_ref(report, pages.get(page_id))
+        return dict(ref, table=table, usage=" + ".join(sorted(use["kinds"])) if page_id else "Bookmark/report scope only",
+                    scope="Page" if page_id else "Bookmark/report scope only",
+                    **{key: sorted(value) for key, value in use.items()}, **extra)
+    table_pages = [flatten(table, pid, use) for table, uses in sorted(table_page_use.items()) for pid, use in sorted(uses.items())]
+    for table in tables:
+        if table not in table_page_use:
+            table_pages.append(dict(page_ref(report), table=table,
+                                    usage="No page usage detected" if report else "Usage unknown",
+                                    scope="No page usage detected" if report else "Not assessed",
+                                    kinds=[], evidence=[], fields=[], measures=[]))
+    measure_pages = [flatten(key[1], pid, use, measure=key[2]) for key, uses in sorted(measure_page_use.items()) for pid, use in sorted(uses.items())]
     return {"rows": rows, "counts": dict(counts), "columnCount": len(columns), "csvFields": CSV_FIELDS,
+            "tablePages": table_pages, "measurePages": measure_pages,
             "reportMeasures": sorted(report_measures),
+            "dependencyGraph": {
+                "nodes": [dict(id=node_id(k), kind="column" if k[0] == "c" else "measure",
+                               table=k[1], name=k[2], label=label(k)) for k in sorted(columns.keys() | measures.keys())],
+                "edges": [dict(dependent=node_id(k), dependency=node_id(d))
+                          for k, deps in sorted(graph.items()) for d in sorted(deps)],
+                "wholeTableDependencies": [dict(node=node_id(k), table=t)
+                                           for k, deps in sorted(table_deps.items()) for t in sorted(deps)],
+                "consumers": consumers,
+            },
             "scope": SCOPE, "sourceNote": SOURCE_NOTE, "issues": sorted(issues)}
 
 
 CSV_FIELDS = [("decision", "Deletion assessment"), ("usedInReport", "Used in report"),
-              ("table", "Table"), ("column", "Column"), ("page", "Report page"), ("pageId", "Page ID"),
+              ("report", "Report"), ("table", "Table"), ("column", "Column"), ("page", "Report page"), ("pageId", "Page ID"), ("pageScope", "Page scope"),
               ("pageUsage", "Page usage"), ("pageMeasures", "Measures on this page"),
               ("usedByMeasures", "Used by measures (all)"), ("usedByCalculations", "Used by calculations"),
               ("modelDependencies", "Model dependencies"), ("reason", "Assessment reason"),
