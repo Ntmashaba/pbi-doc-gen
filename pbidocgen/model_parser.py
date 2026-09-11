@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from .source_inventory import enrich_source
 
 
 # --------------------------------------------------------------------------
@@ -251,7 +252,7 @@ def parse_model(model_path: str | Path) -> dict:
         for part in tbl.get("partitions", []):
             src = part.get("source", {}) or {}
             p_mode = src.get("type", "m")
-            expression = expr_text(src.get("expression"))
+            expression = expr_text(src.get("query", src.get("expression")) if p_mode == "query" else src.get("expression"))
             if p_mode == "entity":
                 # Direct Lake / Fabric: the upstream object is named outright
                 # rather than expressed in M.
@@ -268,6 +269,9 @@ def parse_model(model_path: str | Path) -> dict:
                 }
             else:
                 source = extract_m_source(expression, p_mode)
+            data_source = next((d for d in model.get("dataSources", [])
+                                if d.get("name") == src.get("dataSource")), None)
+            source = enrich_source(source, expression, p_mode, data_source)
             partitions.append({
                 "name": part.get("name", ""),
                 "mode": part.get("mode", "import"),

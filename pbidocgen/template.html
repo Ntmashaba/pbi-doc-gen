@@ -261,12 +261,14 @@ function sortColumns(key){
   filterColumns();
 }
 function columnCsv(rows){
+  return inventoryCsv(rows, DATA.columns.csvFields);
+}
+function inventoryCsv(rows, fields){
   const cell = value=>{
     let s = Array.isArray(value)?value.join("; "):String(value??"");
     if(/^[=+@-]/.test(s.trimStart())||/^[\t\r\n]/.test(s)) s="'"+s;
     return '"'+s.replace(/"/g,'""')+'"';
   };
-  const fields = DATA.columns.csvFields;
   return '\uFEFF'+[fields.map(([,title])=>cell(title)).join(','),
     ...rows.map(row=>fields.map(([key])=>cell(row[key])).join(','))].join('\r\n')+'\r\n';
 }
@@ -506,6 +508,37 @@ function fMan(q){
 }
 
 /* ============================================================ tables */
+const sourceCsvFields = [["report","Report"],["table","Model table"],["usage","Report usage"],
+  ["partition","Partition"],["server","Server"],["database","Database"],
+  ["sourceType","Source type"],["objectType","Object type"],["object","Source object"],
+  ["queryKind","Query language"],["query","Query"],["notes","Notes"],["expression","Partition expression"]];
+function sourceRows(q=''){
+  q=q.trim().toLowerCase();
+  return DATA.tableSources.filter(r=>!q||Object.values(r).join(' ').toLowerCase().includes(q));
+}
+function rTableSources(){
+  return `<h2>Report → table → source</h2>
+    <p class="sub">The report column names the supplied report; report usage shows whether a dependency was detected.
+    Each partition has its own row. Unknown connection details are left unresolved.</p>
+    <button class="chip" style="margin:.7rem 0" onclick="downloadSourceCsv()">Export source summary CSV</button>
+    <div class="column-scroll" style="margin-bottom:1.2rem"><table class="t" id="table-source-summary">
+    <thead><tr><th>Report</th><th>Model table / partition</th><th>Report usage</th><th>Server</th><th>Database</th><th>Source type</th><th>Source object / query</th></tr></thead>
+    <tbody>${DATA.tableSources.map((r,i)=>`<tr data-source-index="${i}">
+      <td>${esc(r.report)}</td><td><b>${esc(r.table)}</b><div class="mut">${esc(r.partition)||'No partition'}</div></td>
+      <td>${esc(r.usage)}</td><td>${esc(r.server)||'Unknown / not applicable'}</td><td>${esc(r.database)||'Unknown / not applicable'}</td>
+      <td>${esc(r.objectType)}<div class="mut">${esc(r.sourceType)}</div></td>
+      <td>${r.object?`<span class="ref">${esc(r.object)}</span>`:''}
+      ${r.query?`<details><summary>Show ${esc(r.queryKind)} query</summary><div class="body"><pre class="code">${esc(r.query)}</pre></div></details>`:''}
+      ${!r.object&&!r.query?'No source object or expression found':''}
+      ${r.notes.length?`<p class="mut">${r.notes.map(esc).join('<br>')}</p>`:''}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+function downloadSourceCsv(){
+  const rows=sourceRows(document.getElementById('table-search').value);
+  const url=URL.createObjectURL(new Blob([inventoryCsv(rows,sourceCsvFields)],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');a.href=url;a.download='report-table-sources.csv';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
 function rTables(){
   const cards = M.tables.map(t=>{
     const u = usageOf(t.name);
@@ -535,13 +568,21 @@ function rTables(){
     </details>`;
   }).join("");
   return `${coupler()}<h1>Tables</h1>
-  <input class="search" placeholder="Search tables…" oninput="fTbl(this.value)">
+  <input id="table-search" class="search" placeholder="Search tables, reports or sources…" aria-label="Search tables, reports or sources" oninput="fTbl(this.value)">
+  ${rTableSources()}
+  <h2>Table details</h2>
   <div id="tbl-list">${cards}</div>`;
 }
 function fTbl(q){
   q=q.toLowerCase();
+  const visibleRows = new Set(sourceRows(q));
+  const matches = new Set([...visibleRows].map(r=>r.table));
+  document.querySelectorAll('[data-source-index]').forEach(tr=>{
+    const row=DATA.tableSources[Number(tr.dataset.sourceIndex)];
+    tr.style.display=visibleRows.has(row)?'':'none';
+  });
   document.querySelectorAll("#tbl-list details").forEach(d=>{
-    d.style.display = d.id.replace("tbl-","").toLowerCase().includes(q.replace(/[^\w]+/g,"_"))||d.querySelector("summary").textContent.toLowerCase().includes(q)?"":"none";
+    d.style.display = [...matches].some(name=>d.id==='tbl-'+slug(name))?'':'none';
   });
 }
 

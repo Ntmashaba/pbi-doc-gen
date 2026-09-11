@@ -8,6 +8,30 @@ No installation beyond Python. No third-party packages. One command, one file ou
 
 ## Which columns are used, and which can be deleted?
 
+### Report, table and source summary
+
+The **Tables** view begins with a searchable **Report → table → source** summary:
+
+| Report | Model table / partition | Report usage | Server | Database | Source type | Source object / query |
+|---|---|---|---|---|---|---|
+| Supplied report name | Model table and partition | Used / possible dependency / no usage detected | Connection server | Source database | Table, view, SQL query, or other source | Schema-qualified object or expandable query text |
+
+There is one row per model table partition, so archive/live sources remain
+separate. Tables without a partition remain visible. **Export source summary
+CSV** exports the filtered rows with full query text; the same rows are available
+in JSON as `tableSources`. Existing table details remain below the summary.
+
+The extractor reads SQL text from literal `Sql.Database(..., [Query=...])`,
+`Value.NativeQuery(...)`, `Odbc.Query(...)`, and legacy query partitions with
+named model connections. Dynamic SQL and ambiguous multi-source M expressions
+show the full Power Query expression for inspection. Unknown server/database
+values remain unknown; queries are never executed. Navigation metadata supplies
+the object type where available; otherwise the label is **Table or view**.
+The report name identifies the supplied report, while **Report usage** indicates
+whether usage was detected. Model-only runs show **Usage unknown**.
+
+### Column usage and deletion assessment
+
 The HTML now opens on **Columns** when a model is supplied. It lists **one row
 per column and report page**, with deletion assessment and usage first. A column
 used on four pages has four rows. A column with no page usage still has one row

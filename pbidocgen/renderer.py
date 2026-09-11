@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from .column_usage import build_column_usage
+from .source_inventory import build_source_inventory
 
 TEMPLATE = Path(__file__).parent / "template.html"
 
@@ -27,6 +28,7 @@ def build_payload(model: dict | None, report: dict | None,
         "report": report,
         "linked": linked,
         "columns": columns,
+        "tableSources": build_source_inventory(model, report, linked, columns) if model else [],
     }
 
 
