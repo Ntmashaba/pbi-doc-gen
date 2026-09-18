@@ -57,6 +57,26 @@ model/unassigned scope; the comparison CSV expands affected pages into rows.
 The generated HTML remains one offline file: `explorer.js` and `explorer.css`
 are embedded during generation, so you do not need to distribute them beside it.
 
+## Sources query CSV
+
+In **Sources**, choose **Export all M queries CSV**. It downloads
+`<report name>-source-queries.csv` with exactly:
+
+| report | query name | query m code |
+|---|---|---|
+| Supplied report name | Table/query or shared-expression name | Complete M expression |
+
+The export covers the whole model, regardless of selected page, and includes
+shared M queries, functions and parameters. Single-partition queries use the
+table name; multiple partitions use `table / partition`. SQL-only, DAX and
+entity partitions are excluded. In model-only mode, the model name replaces
+the report name. Multiline expressions and quotes are preserved in CSV fields;
+spreadsheet-formula-like cells receive a protective leading apostrophe.
+
+All browser CSV filenames now include the report name (with filename-unsafe
+characters replaced). Explicit command-line `--csv PATH` destinations are
+unchanged. Regenerate the HTML to obtain the new export button.
+
 ## Which columns are used, and which can be deleted?
 
 ### Report, table and source summary
@@ -466,3 +486,21 @@ source extraction, consistent page identities across CSV/JSON/Word/Markdown,
 geometry preservation, and generated JavaScript interactions. Node.js is optional
 and required only for the JavaScript checks. Those checks use a DOM adapter;
 they do not replace browser rendering checks or validation against your own PBIP.
+
+### Adversarial regressions and browser CI
+
+The review fixes now protect measure detail-row dependencies, preserve quoted
+DAX identifiers, detect incomplete page inventories, and propagate calculated-table
+and parameter dependencies as **possible** page usage. The selector includes
+Possible usage; these paths do not imply that every runtime choice was selected.
+The context bar exposes analysis-coverage issues. Comparison now includes shared
+expressions, calculation groups and detail rows; it rejects unsupported future
+extract schemas.
+
+Run `python tests/run_ci.py` for the strict regression gate (38 tests minimum,
+no skipped tests). GitHub Actions runs this plus Chromium checks. For the browser
+gate locally, install `playwright@1.62.1` with npm, install its Chromium binary,
+run `python tests/build_browser_fixture.py`, then run
+`node tests/browser_review.cjs /tmp/pbidocgen-browser.html`.
+The fixture is synthetic. Chromium verification in the delivery environment was
+blocked by download timeouts; see the review register for the exact status.

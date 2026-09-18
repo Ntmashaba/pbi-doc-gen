@@ -139,7 +139,7 @@ const hlDAX = s => esc(s)
   .replace(/(&quot;.*?&quot;)/g,'<span class="s">$1</span>');
 const goTable = n => { switchTab("tables"); requestAnimationFrame(()=>flash("tbl-"+slug(n))); };
 const goMeasure = n => { switchTab("measures"); requestAnimationFrame(()=>flash("mea-"+slug(n))); };
-const slug = s => String(s).replace(/[^\w]+/g,"_");
+const slug = s => "u"+Array.from(String(s)).map(c=>c.codePointAt(0).toString(16)).join("_");
 const pageKey = id => Array.from(String(id)).map(c=>c.codePointAt(0).toString(16)).join('_');
 const pageLabel = r => r.pageId ? `${r.report} / ${r.page} [${r.pageId}]` : `${r.report} / No specific page`;
 function flash(id){
@@ -236,7 +236,7 @@ function rColumns(){
       <select id="column-assessment" class="search" style="width:auto;margin:0" aria-label="Filter deletion assessment" onchange="filterColumns()">
         <option value="">All assessments</option><option>Keep</option><option>Deletion candidate</option><option>Review</option></select>
       <select id="column-used" class="search" style="width:auto;margin:0" aria-label="Filter report usage" onchange="filterColumns()">
-        <option value="">All report usage</option><option value="Yes">Used in report</option><option value="Not detected">No report usage detected</option><option value="Unknown">Usage unknown</option></select>
+        <option value="">All report usage</option><option value="Yes">Used in report</option><option value="Possible">Possible usage</option><option value="Not detected">No report usage detected</option><option value="Unknown">Usage unknown</option></select>
       <select id="column-page" class="search" style="width:auto;margin:0;max-width:240px" aria-label="Filter report page" onchange="setPageScope(this.value)">
         <option value="*">All pages</option><option value="">No specific page</option>
         ${(R?.pages||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.id)})</option>`).join("")}</select>
@@ -291,10 +291,7 @@ function inventoryCsv(rows, fields){
     ...rows.map(row=>fields.map(([key])=>cell(row[key])).join(','))].join('\r\n')+'\r\n';
 }
 function downloadColumnCsv(){
-  const url = URL.createObjectURL(new Blob([columnCsv(visibleColumns)],{type:'text/csv;charset=utf-8'}));
-  const a = document.createElement('a'); a.href=url; a.download='column-page-usage.csv';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  exportCsvFile(columnCsv(visibleColumns),'column-page-usage.csv');
 }
 
 /* ============================================================ coupler */
@@ -396,7 +393,7 @@ function drawLineage(){
   // nodes
   const node = (x,y,w,label,fill,stroke,id,extra="")=>`<g class="lin-node" id="${id}" ${extra}><rect x="${x}" y="${y-12}" width="${w}" height="24" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/><text x="${x+8}" y="${y+4}" fill="var(--ink)">${esc(label.length>30?label.slice(0,29)+"…":label)}</text></g>`;
   sources.forEach((s,i)=>{ svg += node(8, yOf(i,sources.length), 198, s.key, "var(--panel2)", "var(--line)", nodeId("s",s.key), `onclick="linHl('s','${slug(s.key)}')"`); });
-  tables.forEach((t,i)=>{ svg += node(colW+8, yOf(i,tables.length), 198, t.name, "#fff", uColor(t.usage), nodeId("t",t.name), `onclick="linHl('t','${slug(t.name)}','${esc(t.name).replace(/'/g,"\\'")}')"`); });
+  tables.forEach((t,i)=>{ svg += node(colW+8, yOf(i,tables.length), 198, t.name, "#fff", uColor(t.usage), nodeId("t",t.name), `onclick="${action('linHl','t',slug(t.name),t.name)}"`); });
   pages.forEach((p,i)=>{ svg += node(colW*2+8, yOf(i,pages.length), 198, `${p.name} [${p.id}]`, "var(--panel2)", "var(--line)", 'ln-p-'+pageKey(p.id), `onclick="linHl('p','${pageKey(p.id)}')"`); });
   ["Sources","Model tables","Report pages"].forEach((h,i)=>{ svg += `<text x="${i*colW+8}" y="${12}" font-size="10" fill="var(--ink3)" style="text-transform:uppercase;letter-spacing:.1em;font-family:var(--mono)">${h}</text>`; });
   svg += "</svg>";
@@ -533,9 +530,7 @@ function rTableSources(){
 }
 function downloadSourceCsv(){
   const rows=sourceRows(document.getElementById('table-search').value,document.getElementById('table-page').value);
-  const url=URL.createObjectURL(new Blob([inventoryCsv(rows,sourceCsvFields)],{type:'text/csv;charset=utf-8'}));
-  const a=document.createElement('a');a.href=url;a.download='report-table-sources.csv';
-  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  exportCsvFile(inventoryCsv(rows,sourceCsvFields),'report-table-sources.csv');
 }
 function rTables(){
   const cards = scopedTables().map(t=>{
@@ -655,7 +650,7 @@ function drawERD(){
   const typeFill = {fact:"var(--factBg)","dimension":"var(--dimBg)","date dimension":"var(--dateBg)"};
   for(const [name,p] of Object.entries(pos)){
     const t = M.tables.find(x=>x.name===name);
-    svg += `<g class="lin-node" onclick="goTable('${esc(name).replace(/'/g,"\\'")}')"><rect x="${p.x}" y="${p.y}" width="${boxW}" height="${boxH}" rx="6" fill="${typeFill[t.tableType]||"var(--otherBg)"}" stroke="var(--line)"/><text x="${p.x+10}" y="${p.y+19}" font-weight="600">${esc(name.length>24?name.slice(0,23)+"…":name)}</text></g>`;
+    svg += `<g class="lin-node" onclick="${action('goTable',name)}"><rect x="${p.x}" y="${p.y}" width="${boxW}" height="${boxH}" rx="6" fill="${typeFill[t.tableType]||"var(--otherBg)"}" stroke="var(--line)"/><text x="${p.x+10}" y="${p.y+19}" font-weight="600">${esc(name.length>24?name.slice(0,23)+"…":name)}</text></g>`;
   }
   svg += "</svg>";
   const orphans = M.tables.filter(t=>!inRel.has(t.name));
@@ -682,6 +677,8 @@ function rSources(){
       }).join("")}</tbody></table>
     </div>`).join("");
   return `${coupler()}<h1>Data sources</h1>
+  <div class="card"><button class="chip" onclick="downloadQueryCsv()">Export all M queries CSV</button>
+    <p class="mut">${(DATA.sourceQueries||[]).length} M queries and shared expressions across the complete model, regardless of the selected page. Columns: report, query name, query m code. SQL-only, DAX and entity partitions are excluded.</p></div>
   <p class="sub">Where every table's data comes from, grouped by upstream system. Extracted statically from partition M expressions — parameterised or dynamically built connections may not resolve fully.</p>${cards}`;
 }
 

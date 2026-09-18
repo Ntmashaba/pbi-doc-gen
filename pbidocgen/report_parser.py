@@ -33,20 +33,18 @@ import json
 import re
 from pathlib import Path
 from .page_references import attach_report_locations
+from .input_validation import validate_report
 
 
 def _load(path: Path):
     """Read a PBIR JSON file. Returns None if it is absent or unparseable —
     every caller treats None as "this optional part is not present"."""
-    try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    for encoding in ('utf-8-sig', 'utf-16'):
         try:
-            return json.loads(path.read_text(encoding="utf-16"))
-        except Exception:
-            return None
-    except OSError:
-        return None
+            return validate_report(json.loads(path.read_text(encoding=encoding)))
+        except (ValueError, UnicodeError, OSError, RecursionError):
+            continue
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -226,6 +224,14 @@ def parse_report(report_path: str | Path) -> dict:
     active = None
     pages_meta = _load(pages_dir / "pages.json") or {}
     order = pages_meta.get("pageOrder", [])
+    if not isinstance(order, list) or not all(isinstance(pid, str) for pid in order):
+        warnings.append({"severity": "warning", "category": "Incomplete report", "message": "Invalid pages.json pageOrder; page coverage is uncertain."})
+        order = []
+    if (pages_dir / "pages.json").exists() and not pages_meta:
+        warnings.append({"severity": "warning", "category": "Incomplete report", "message": "Unreadable pages.json; page coverage is uncertain."})
+    for pid in order:
+        if pid not in {d.name for d in pages_dir.iterdir() if d.is_dir()}:
+            warnings.append({"severity": "warning", "category": "Incomplete report", "message": f"Declared page {pid!r} is missing from the extract."})
     active = pages_meta.get("activePageName")
 
     page_dirs = [d for d in pages_dir.iterdir() if d.is_dir()] if pages_dir.exists() else []

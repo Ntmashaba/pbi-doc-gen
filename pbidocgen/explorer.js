@@ -21,14 +21,15 @@ function rememberView(){
   if(!activeTab) return;
   const state={inputs:[],details:[]};
   document.querySelectorAll('#main input[id]:not([type=file]), #main select[id]').forEach(el=>{
-    if(!['global-page','column-page','table-page'].includes(el.id)) state.inputs.push([el.id,el.value]);
+    if(!['global-page','column-page','table-page','impact-field','impact-search'].includes(el.id)) state.inputs.push([el.id,el.value]);
   });
   document.querySelectorAll('#main details[id][open]').forEach(el=>state.details.push(el.id));
   viewState.set(activeTab,state);
 }
 function restoreView(id){
   const state=viewState.get(id);
-  for(const [key,value] of state?.inputs||[]){const el=document.getElementById(key);if(el) el.value=value;}
+  if(id==='impact'){document.getElementById('impact-field').value=impactNode;document.getElementById('impact-search').value=impactQuery;}
+  for(const [key,value] of state?.inputs||[]){if(id==='impact'&&['impact-field','impact-search'].includes(key)) continue;const el=document.getElementById(key);if(el) el.value=value;}
   for(const key of state?.details||[]){const el=document.getElementById(key);if(el) el.open=true;}
   for(const key of ['global-page','column-page','table-page']){const el=document.getElementById(key);if(el) el.value=pageScope;}
 }
@@ -40,6 +41,7 @@ function scopeBar(id){
     id==='compare'?'Page changes follow this selection; model changes without page usage remain visible.':
     'Usage and CSV exports follow this selection. Deletion assessments always cover the whole extract.';
   return `<div class="scope-bar"><div><b>Report: ${esc(R?.name||'Not supplied')}</b><div class="mut">${esc(note)}</div></div>
+    ${DATA.columns?.issues?.length?`<details><summary>Analysis coverage: ${DATA.columns.issues.length} issue(s)</summary><p>${listText(DATA.columns.issues)}</p></details>`:''}
     <label>Report page <select id="global-page" onchange="setPageScope(this.value)">
     <option value="*">All pages</option><option value="">No specific page</option>
     ${pages.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} [${esc(p.id)}]${p.hidden?' · hidden':''}</option>`).join('')}</select></label></div>`;
@@ -83,7 +85,7 @@ function rMatrix(){
   if(pageScope==='*'||pageScope==='') slots.push({pageId:'',page:'No specific page',report:R.name});
   return `<h1>Usage matrix</h1><p class="sub">Expand a table to see its columns across individual pages. Select a cell for its evidence. A dash means no page reference was detected, not that deletion is safe.</p>
     <input id="matrix-search" class="search" value="${esc(matrixQuery)}" placeholder="Search tables or columns…" aria-label="Search usage matrix" oninput="matrixQuery=this.value;renderMatrixBody()">
-    <p class="mut">Direct = visual or filter binding · Indirect = measure, calculation or table expression · Possible = relationship dependency. Hidden pages are included.</p>
+    <p class="mut">Direct = visual or filter binding · Indirect = measure, calculation or table expression · Possible = relationship or calculated-table/parameter dependency. Hidden pages are included.</p>
     <div class="column-scroll"><table class="t matrix"><thead><tr><th>Table / column</th>${slots.map(p=>`<th>${esc(p.page)}<div class="mut">${esc(p.pageId)}</div></th>`).join('')}</tr></thead><tbody id="matrix-body">${matrixBody(slots)}</tbody></table></div>`;
 }
 function matrixBody(slots){
@@ -122,7 +124,7 @@ function downstreamPaths(id){
 }
 function impactConsumers(id,scope=pageScope){
   const paths=downstreamPaths(id);
-  return graph.consumers.filter(c=>paths.has(c.node)&&(scope==='*'||c.pageId===scope)).map(c=>({...c,path:paths.get(c.node)}));
+  return graph.consumers.filter(c=>paths.has(c.node)&&(scope==='*'||c.pageId===scope)).map(c=>({...c,path:paths.get(c.node),possible:paths.get(c.node).some((id,i,path)=>i>0&&graph.edges.some(e=>e.dependency===path[i-1]&&e.dependent===id&&e.possible))}));
 }
 function impactDetails(id,scope=pageScope){
   const n=graphNodes.get(id);if(!n) return '<p>No resolved field selected.</p>';
@@ -133,7 +135,7 @@ function impactDetails(id,scope=pageScope){
   const wholeTables=graph.wholeTableDependencies.filter(e=>e.node===id).map(e=>e.table);
   const dependent=[...paths.keys()].filter(k=>k!==id).map(k=>graphNodes.get(k));
   const sources=[...new Map(DATA.tableSources.filter(r=>r.table===n.table).map(r=>[r.partition,r])).values()];
-  const pathHtml=consumers.map(c=>`<li><b>${esc(pageLabel(c))}</b><div>${esc(c.evidence)}</div><p class="path">${c.path.map(k=>esc(graphNodes.get(k)?.label||k)).join(' → ')}</p>${c.visualId?`<button class="xl" onclick="${action('inspectVisual',c.pageId,c.visualId)}">Inspect visual ${esc(c.visualId)}</button>`:''}</li>`).join('');
+  const pathHtml=consumers.map(c=>`<li><b>${esc(pageLabel(c))}</b><div>${esc(c.evidence)}</div>${c.possible?'<b>Possible dependency — runtime selection/output lineage unresolved</b>':''}<p class="path">${c.path.map(k=>esc(graphNodes.get(k)?.label||k)).join(' → ')}</p>${c.visualId?`<button class="xl" onclick="${action('inspectVisual',c.pageId,c.visualId)}">Inspect visual ${esc(c.visualId)}</button>`:''}</li>`).join('');
   return `<p>${esc(n.kind)} · ${esc(n.label)}</p>${col?`<p><b>${esc(col.decision)}</b> · ${esc(col.reason)}</p>`:''}
     <h3>Where it is used</h3><p class="mut">${consumers.length} binding locations in the selected scope. One shortest detected path per binding is shown; DAX is not executed.</p><ul class="impact-paths">${pathHtml||'<li>No resolved usage in this page scope.</li>'}</ul>
     <h3>Reads these fields</h3><p>${dependencies.map(d=>`<button class="xl" onclick="${action('inspectNode',d.id,scope)}">${esc(d.label)}</button>`).join(', ')||'No explicit field dependencies detected'}</p>
@@ -145,9 +147,10 @@ function impactDetails(id,scope=pageScope){
     ${sources.map(r=>`<p>${esc([r.server,r.database,r.object||r.partition].filter(Boolean).join(' / '))}</p>${r.query?`<details><summary>${esc(r.queryKind)} query</summary><pre class="code">${esc(r.query)}</pre></details>`:''}`).join('')}
     ${col?`<p>Model input column: ${esc(col.sourceColumn)||'Unknown'}</p>`:''}<p class="mut">${esc(DATA.columns.sourceNote)}</p>`;
 }
-function inspectNode(id,scope=pageScope){impactNode=id;openInspector(graphNodes.get(id)?.label||'Field details',impactDetails(id,scope));}
+function inspectNode(id,scope=pageScope){impactNode=id;if(!graphNodes.get(id)?.label.toLowerCase().includes(impactQuery.toLowerCase())) impactQuery='';openInspector(graphNodes.get(id)?.label||'Field details',impactDetails(id,scope));}
 function rImpact(){
   const nodes=graph.nodes.filter(n=>!impactQuery||n.label.toLowerCase().includes(impactQuery.toLowerCase()));
+  if(!nodes.some(n=>n.id===impactNode)) impactNode=nodes[0]?.id||'';
   return `<h1>Impact inspector</h1><p class="sub">Choose a column or measure to see downstream calculations and the specific report pages and visuals that consume it.</p>
     <input id="impact-search" class="search" value="${esc(impactQuery)}" placeholder="Search a column or measure…" aria-label="Search dependency fields" oninput="impactQuery=this.value;renderImpactOptions()">
     <label>Field <select id="impact-field" class="search" onchange="impactNode=this.value;renderImpactDetails()">${impactOptions(nodes)}</select></label>
@@ -196,9 +199,21 @@ function rCleanup(){
       return `<tr><th><button class="xl" onclick="${action('inspectNode',nodeId('c',r.table,r.column),'*')}">${esc(r.table)}[${esc(r.column)}]</button></th><td>${esc(r.decision)}</td><td>${esc(r.reason)}<details><summary>Dependencies and review notes</summary><p>${listText(r.modelDependencies)}</p><p>${listText(r.reviewNotes)}</p></details></td><td>${pages.map(p=>esc(pageLabel(p))).join('<br>')||esc(r.pageScope)}</td></tr>`;
     }).join('')||'<tr><td colspan="4">No columns have this assessment.</td></tr>'}</tbody></table>`;
 }
+function csvFilename(name){
+  const raw=R?.name||M?.name||DATA.title||'Power-BI';
+  let reportName=String(raw).normalize('NFC').replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g,'_').replace(/[ .]+$/g,'').trim();
+  if(!reportName||/^\.+$/.test(reportName)) reportName='Power-BI';
+  // Leave room for the export type and extension on common filesystems.
+  reportName=Array.from(reportName).slice(0,80).join('');
+  return reportName+'-'+name;
+}
+const queryCsvFields=[['report','report'],['queryName','query name'],['mCode','query m code']];
+function downloadQueryCsv(){
+  exportCsvFile(inventoryCsv(DATA.sourceQueries||[],queryCsvFields),'source-queries.csv');
+}
 function exportCsvFile(csv,name){
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const a=document.createElement('a');a.href=url;a.download=csvFilename(name);document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 // Comparison uses definitions and bindings, not volatile timestamps or generated prose.
 function canonical(value){
@@ -214,11 +229,14 @@ function snapshot(payload){
   for(const t of payload.model?.tables||[]){
     const pages=tablePages.filter(r=>r.table===t.name);
     put('Table',[t.name],t.name,{hidden:t.isHidden,description:t.description},pages);
+    put('Calculation group',[t.name],t.name,t.calculationGroupDefinition||t.calculationGroup,pages);
+    put('Table detail rows',[t.name],t.name,t.detailRowsDefinition,pages);
     for(const c of t.columns||[]) put('Column',[t.name,c.name],`${t.name}[${c.name}]`,{type:c.dataType,expression:c.expression,sourceColumn:c.sourceColumn,hidden:c.isHidden,sortBy:c.sortByColumn,isKey:c.isKey},columns.filter(r=>r.table===t.name&&r.column===c.name));
     for(const p of t.partitions||[]) put('Source',[t.name,p.name],`${t.name} / ${p.name}`,{mode:p.mode,type:p.type,expression:p.expression,source:p.source},pages);
     for(const h of t.hierarchies||[]) put('Hierarchy',[t.name,h.name],`${t.name} / ${h.name}`,h,pages);
   }
-  for(const m of payload.model?.measures||[]) put('Measure',[m.table,m.name],`${m.table}[${m.name}]`,{expression:m.expression,format:m.formatString,dynamicFormat:m.formatStringExpression,hidden:m.isHidden},measurePages.filter(r=>r.table===m.table&&r.measure===m.name));
+  for(const m of payload.model?.measures||[]) put('Measure',[m.table,m.name],`${m.table}[${m.name}]`,{expression:m.expression,format:m.formatString,dynamicFormat:m.formatStringExpression,detailRows:m.detailRowsDefinition,hidden:m.isHidden},measurePages.filter(r=>r.table===m.table&&r.measure===m.name));
+  for(const e of payload.model?.expressions||[]) put('Shared expression',[e.name],e.name,{kind:e.kind,expression:e.expression});
   for(const rel of payload.model?.relationships||[]) put('Relationship',[rel.name],rel.name,rel,tablePages.filter(r=>[rel.fromTable,rel.toTable].includes(r.table)));
   for(const role of payload.model?.roles||[]) put('Security role',[role.name],role.name,role);
   if(payload.report){
@@ -245,6 +263,7 @@ function compareExtracts(before,after){
   return rows.sort((a,b)=>a.kind.localeCompare(b.kind)||a.item.localeCompare(b.item));
 }
 function validateExtract(value){
+  if(value?.schemaVersion && ![1,2].includes(value.schemaVersion)) throw new Error('Unsupported extract schema version: '+value.schemaVersion);
   if(!value||typeof value!=='object'||Array.isArray(value)||(!value.model&&!value.report)) throw new Error('Choose a JSON extract produced by --json.');
   if(value.model&&(!Array.isArray(value.model.tables)||!Array.isArray(value.model.measures))) throw new Error('The model definition is incomplete.');
   if(value.report&&(!Array.isArray(value.report.pages)||value.report.pages.some(p=>!p||typeof p.id!=='string'||!Array.isArray(p.visuals)))) throw new Error('The report pages are incomplete.');
@@ -264,10 +283,11 @@ function comparisonRows(){return comparison?compareExtracts(comparison,DATA).fil
 function rCompare(){
   const rows=comparisonRows();
   const mismatch=comparison&&(comparison.model?.name!==M?.name||comparison.report?.name!==R?.name||comparison.mode!==MODE);
-  return `<h1>Compare extracts</h1><p class="sub">Choose an earlier JSON extract as the baseline. This document is the current extract. Files are read locally; no upload is made. Compares definitions, sources, DAX, filters, relationships, bookmarks and visual bindings, not data values.</p>
+  return `<h1>Compare extracts</h1><p class="sub">Choose an earlier JSON extract as the baseline. This document is the current extract. Files are read locally; no upload is made. Compares supported definitions including calculation groups, shared M expressions and detail rows, plus sources, DAX, filters, relationships, bookmarks and visual bindings. Data values and unsupported metadata are not compared. Shared-expression changes have unresolved page scope.</p>
     <label>Earlier extract (.json) <input type="file" accept=".json,application/json" onchange="loadComparison(this)"></label>
     <p role="status">${esc(comparisonError)}</p>${comparison?`<p>Baseline: <b>${esc(comparisonName)}</b> (${esc(comparison.generated||'date unknown')}) → Current: ${esc(DATA.generated)}</p>
     ${mismatch?'<div class="card">The report/model names or extraction modes differ. Changes may reflect different projects or missing input files; confirm that these extracts are comparable.</div>':''}
+    ${!comparison.model?.expressions&&comparison.model?'<p class="mut">The baseline may omit shared expressions and other executable definitions; some additions may reflect improved extraction coverage.</p>':''}
     ${!comparison.columns?.tablePages?'<p class="mut">The baseline lacks page-level model usage; affected pages for removed model objects may be incomplete.</p>':''}
     <p>${rows.length} changes in this scope · <button class="xl" onclick="exportComparison()">Export changes by page</button></p>
     <table class="t"><thead><tr><th>Change</th><th>Object</th><th>Affected report pages</th><th>Definition</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.change)}</td><th>${esc(r.kind)}<br>${esc(r.item)}</th><td>${r.pages.filter(inPageScope).map(p=>esc(pageLabel(p))).join('<br>')||'No resolved page / model scope'}</td><td><details><summary>Before / after</summary><b>Before</b><pre class="code">${esc(r.before)||'Absent'}</pre><b>After</b><pre class="code">${esc(r.after)||'Absent'}</pre></details></td></tr>`).join('')||'<tr><td colspan="4">No definition changes detected in this scope.</td></tr>'}</tbody></table>`:''}`;

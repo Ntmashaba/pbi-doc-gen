@@ -12,15 +12,13 @@ import re
 from collections import defaultdict
 from pathlib import Path
 from .page_references import page_ref
+from .dax_lexer import mask_dax, REFERENCE as _REF
 
 SCOPE = ("Scoped to the supplied model and report. Deletion candidates have no detected "
          "references; check other reports, Excel/composite-model consumers and Power Query "
          "steps before deleting. Static analysis is not proof of safe deletion.")
 SOURCE_NOTE = ("Partition source is best effort. Source column is the model input name, "
                "not verified physical lineage through Power Query renames or transformations.")
-_COMMENTS_STRINGS = re.compile(r'"(?:[^"]|"")*"|//[^\n]*|--[^\n]*|/\*.*?\*/', re.S)
-_REF = re.compile(r"(?:(?:'(?P<quoted>(?:[^']|'')+)'|(?P<table>[^\W\d]\w*))\s*)?"
-                  r"\[(?P<field>(?:[^\]]|\]\])+?)\](?!\])", re.UNICODE)
 
 
 def build_column_usage(model: dict, report: dict | None) -> dict:
@@ -40,7 +38,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         return f"{key[1]}[{key[2]}]"
 
     def refs(expression, home, local_columns=False):
-        text = _COMMENTS_STRINGS.sub(lambda m: " " * len(m.group()), expression or "")
+        text = mask_dax(expression or "")
         found, spans = set(), []
         for match in _REF.finditer(text):
             field = match["field"].replace("]]", "]")
@@ -84,6 +82,22 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
     for key, c in columns.items():
         if c.get("isCalculated"):
             graph[key], table_deps[key] = refs(c.get("expression"), key[1], True)
+
+    # Output-to-input correspondence and runtime parameter choices are unknown.
+    # Retain conservative edges labelled possible, never assert an exact path.
+    possible_edges = set()
+    for table, tbl in tables.items():
+        for part in tbl["partitions"]:
+            if part["type"] != "calculated":
+                continue
+            dependencies, whole = refs(part.get("expression"), table, True)
+            dependencies |= {k for k in columns if k[1] in whole and k[1] != table}
+            for output in (k for k in columns if k[1] == table):
+                for dep in dependencies - {output}:
+                    if dep not in graph[output]:
+                        possible_edges.add((output, dep))
+                    graph[output].add(dep)
+                table_deps[output].update(whole)
 
     def closure(start):
         seen, touched = set(), set()
@@ -166,6 +180,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
     table_page_use = defaultdict(lambda: defaultdict(usage_entry))
     measure_page_use = defaultdict(lambda: defaultdict(usage_entry))
     report_use = defaultdict(set)
+    definite_report_use = set()
     report_measures = set()
     bookmark_use = defaultdict(set)
     pages = {p["id"]: p for p in (report or {}).get("pages", [])}
@@ -206,12 +221,20 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         if root is None:
             return
         deps, whole_tables = closures.get(root, (set(), set()))
+        definite = {root}
+        todo = [root]
+        while todo:
+            node = todo.pop()
+            for dep in graph[node]:
+                if dep not in definite and (node, dep) not in possible_edges:
+                    definite.add(dep)
+                    todo.append(dep)
         page_ids = list(page_ids)
         for pid in page_ids or [""]:
             consumers.append(dict(page_ref(report, pages.get(pid)), node=node_id(root),
                                   visualId=visual_id, evidence=evidence, bookmark=bookmark))
         for key in deps | {root}:
-            kind = "Direct" if key == root else "Via measures" if root[0] == "m" else "Via calculations"
+            kind = "Direct" if key == root else "Possible calculated-table dependency" if key not in definite else "Via measures" if root[0] == "m" else "Via calculations"
             for page_id in page_ids or [""]:
                 trow = table_page_use[key[1]][page_id]
                 trow["kinds"].add(kind)
@@ -236,14 +259,21 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
             affected = affected | {root}
         for key in affected:
             report_use[key].add(evidence)
+            if key in definite:
+                definite_report_use.add(key)
+            else:
+                uncertain[key].add("Possible calculated-table or field-parameter usage; runtime selection/output lineage is unresolved")
             if bookmark:
                 bookmark_use[key].add(evidence)
             for page_id in page_ids:
                 row = page_use[key][page_id]
-                row["kinds"].add("Direct" if key == root else "Via measures" if root[0] == "m" else "Via calculations")
+                row["kinds"].add("Direct" if key == root else "Possible calculated-table dependency" if key not in definite else "Via measures" if root[0] == "m" else "Via calculations")
                 row["evidence"].add(evidence)
                 if root[0] == "m":
                     row["measures"].add(label(root))
+                elif key not in definite:
+                    row["measures"].update(label(m) for m in deps & measures.keys()
+                                           if key in closures.get(m, (set(), set()))[0])
         for key in columns:
             if key[1] in whole_tables:
                 uncertain[key].add(f"Report uses {label(root)} with a whole-table dependency ({evidence})")
@@ -280,9 +310,12 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         else:
             decision = "Deletion candidate"
         counts[decision] += 1
-        if report_use[key]:
+        if key in definite_report_use:
             counts["Used in report"] += 1
-        explanation = ("Referenced by the supplied report." if report_use[key] else
+        elif report_use[key]:
+            counts["Possible report usage"] += 1
+        explanation = ("Referenced by the supplied report." if key in definite_report_use else
+                       "Possible report usage through a calculated table or field parameter." if report_use[key] else
                        "Required by model dependencies." if internal else
                        "; ".join(review) if review else
                        "No report or model references detected. Validate other consumers and Power Query before removal.")
@@ -293,7 +326,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                            src.get("database"), src.get("schema"), src.get("object") or src.get("detail")] if x))
         base = dict(table=table, column=column, decision=decision, reason=explanation,
                     report=report["name"] if report else "Not supplied",
-                    usedInReport="Yes" if report_use[key] else "Not detected" if report else "Unknown",
+                    usedInReport="Yes" if key in definite_report_use else "Possible" if report_use[key] else "Not detected" if report else "Unknown",
                     modelDependencies=internal, reviewNotes=review,
                     usedByMeasures=sorted(used_by_measures[key]),
                     usedByCalculations=sorted(used_by_calculations[key]),
@@ -346,7 +379,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
             "dependencyGraph": {
                 "nodes": [dict(id=node_id(k), kind="column" if k[0] == "c" else "measure",
                                table=k[1], name=k[2], label=label(k)) for k in sorted(columns.keys() | measures.keys())],
-                "edges": [dict(dependent=node_id(k), dependency=node_id(d))
+                "edges": [dict(dependent=node_id(k), dependency=node_id(d), possible=(k, d) in possible_edges)
                           for k, deps in sorted(graph.items()) for d in sorted(deps)],
                 "wholeTableDependencies": [dict(node=node_id(k), table=t)
                                            for k, deps in sorted(table_deps.items()) for t in sorted(deps)],

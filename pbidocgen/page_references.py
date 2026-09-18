@@ -68,6 +68,7 @@ def sync_page_usage(model, report, linked, columns):
             column["pageUsage"] = [{k: r[k] for k in ("report", "page", "pageId", "pageUsage", "pageScope")} for r in refs]
             column["reportUsage"] = ("direct" if "Direct" in usage else "via measures" if "Via measures" in usage
                                      else "via calculations" if "Via calculations" in usage
+                                     else "possible" if "Possible" in usage
                                      else "report scope only" if any(r["usedInReport"] == "Yes" for r in refs)
                                      else "internal only" if any(r["modelDependencies"] for r in refs) else "none")
     for measure in model["measures"]:
@@ -88,7 +89,7 @@ def sync_page_usage(model, report, linked, columns):
         kinds = {k for r in refs for k in r["kinds"]}
         usage["usage"] = ("direct" if "Direct" in kinds else "via measures" if
                           kinds & {"Via measures", "Via calculations", "Table expression"}
-                          else "possible" if "Possible relationship dependency" in kinds else "none")
+                          else "possible" if any(k.startswith("Possible") for k in kinds) else "none")
     for row in linked["lineage"]:
         refs = [r for r in table_rows if r["table"] == row["table"] and r["pageId"]]
         row["pageUsage"] = refs

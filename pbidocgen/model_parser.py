@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 import re
+from .dax_lexer import mask_dax, REFERENCE
+from .input_validation import validate_model
 from pathlib import Path
 from .source_inventory import enrich_source
 
@@ -147,21 +149,22 @@ _DAX_STRING = re.compile(r'"(?:[^"]|"")*"')
 
 
 def _strip_dax(expression: str) -> str:
-    return _DAX_STRING.sub('""', _DAX_COMMENT.sub("", expression))
+    return mask_dax(expression)
 
 
 def extract_dax_refs(expression: str) -> tuple[list[tuple[str, str]], list[str]]:
     """Return (qualified refs as (table, field), bare [refs])."""
     text = _strip_dax(expression or "")
-    qualified = []
-    for m in _QUALIFIED_REF.finditer(text):
-        table = (m.group(1) or m.group(2) or "").strip()
-        field = m.group(3).strip()
+    qualified, bare = [], []
+    for match in REFERENCE.finditer(text):
+        table = (match['quoted'] or match['table'] or '').replace("''", "'")
+        field = match['field'].replace(']]', ']')
+        if match['table'] and table.upper() in {'RETURN', 'NOT', 'IN', 'AND', 'OR'}:
+            table = ''
         if table:
             qualified.append((table, field))
-    # remove qualified spans before scanning for bare refs
-    remainder = _QUALIFIED_REF.sub(" ", text)
-    bare = [m.group(1).strip() for m in _BARE_REF.finditer(remainder)]
+        else:
+            bare.append(field)
     return qualified, bare
 
 
@@ -202,6 +205,7 @@ def load_model_document(model_path: str | Path) -> tuple[dict, str, Path]:
 def parse_model(model_path: str | Path) -> dict:
     bim_path = Path(model_path)
     doc, source_format, bim_path = load_model_document(bim_path)
+    validate_model(doc)
     model = doc.get("model", doc)
 
     tables_out: list[dict] = []
@@ -243,6 +247,7 @@ def parse_model(model_path: str | Path) -> dict:
                 "formatString": expr_text(mea.get("formatString")) or None,
                 "description": expr_text(mea.get("description")) or None,
                 "isHidden": bool(mea.get("isHidden", False)),
+                "detailRowsDefinition": mea.get("detailRowsDefinition"),
                 "formatStringExpression": expr_text((mea.get("formatStringDefinition") or {}).get("expression")),
                 "table": name,
             })
@@ -296,6 +301,8 @@ def parse_model(model_path: str | Path) -> dict:
         tables_out.append({
             "name": name,
             "isHidden": bool(tbl.get("isHidden", False)),
+            "calculationGroupDefinition": calc_group,
+            "detailRowsDefinition": tbl.get("detailRowsDefinition"),
             "calculationGroup": (
                 [{"name": ci.get("name", ""),
                   "expression": expr_text(ci.get("expression"))}
@@ -523,6 +530,9 @@ def parse_model(model_path: str | Path) -> dict:
     return {
         "name": model.get("name") or bim_path.stem,
         "dependencyExpressions": _dependency_expressions(model),
+        "expressions": [{"name": e.get("name", ""), "kind": e.get("kind", "m"),
+                         "expression": expr_text(e.get("expression"))}
+                        for e in model.get("expressions", [])],
         "sourceFormat": source_format,
         "sourcePath": str(bim_path),
         "compatibilityLevel": doc.get("compatibilityLevel"),
@@ -552,6 +562,8 @@ def _dependency_expressions(model: dict) -> list[dict]:
         name = tbl.get("name", "")
         for key in ("calculationGroup", "detailRowsDefinition"):
             walk(tbl.get(key), name, f"{name}/{key}")
+        for measure in tbl.get("measures", []):
+            walk(measure.get("detailRowsDefinition"), name, f"Measure {name}[{measure.get('name', '')}]/detailRowsDefinition")
         for part in tbl.get("partitions", []):
             if (part.get("source") or {}).get("type") == "calculated":
                 walk(part["source"], name, f"Calculated table {name}")

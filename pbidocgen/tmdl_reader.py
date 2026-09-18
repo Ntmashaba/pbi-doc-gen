@@ -396,6 +396,9 @@ def _table_to_tmsl(node: Node) -> dict:
         fsd = m.kid("formatStringDefinition")
         if fsd is not None:
             mea["formatStringDefinition"] = {"expression": fsd.text()}
+        detail = m.kid("detailRowsDefinition")
+        if detail is not None:
+            mea["detailRowsDefinition"] = {"expression": detail.text()}
         measures.append(mea)
     out["measures"] = measures
 
@@ -434,12 +437,16 @@ def _table_to_tmsl(node: Node) -> dict:
         })
     out["partitions"] = partitions
 
+    detail = node.kid("detailRowsDefinition")
+    if detail is not None:
+        out["detailRowsDefinition"] = {"expression": detail.text()}
     cg = node.kid("calculationGroup")
     if cg is not None:
         out["calculationGroup"] = {
             "precedence": cg.prop("precedence"),
             "calculationItems": [
-                {"name": ci.name, "expression": ci.text()}
+                {"name": ci.name, "expression": ci.text(),
+                 "formatStringDefinition": {"expression": ci.kid("formatStringDefinition").text()} if ci.kid("formatStringDefinition") else None}
                 for ci in cg.kids("calculationItem")
             ],
         }
