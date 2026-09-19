@@ -567,3 +567,16 @@ run `python tests/build_browser_fixture.py`, then run
 `node tests/browser_review.cjs /tmp/pbidocgen-browser.html`.
 The fixture is synthetic. Chromium verification in the delivery environment was
 blocked by download timeouts; see the review register for the exact status.
+
+### Source-object CSV without code
+
+On **Data sources**, choose **Export source objects CSV (no code)** to download
+`<report name>-source-objects-no-code.csv`. It includes the same filtered report/page
+and source-object rows, but omits Original M code, Extracted SQL, and Referenced M
+code. **Export source objects CSV (with code)** retains the full-code export.
+The HTML and JSON still contain original code for verification.
+
+CSV fields are double-quoted; embedded quotes are doubled. Commas and tabs remain
+inside their fields, and multiline values retain their line breaks. Use a CSV-aware
+importer that respects quoted fields. The no-code export avoids multiline code
+cells; it does not remove company identifiers from the remaining source metadata.

@@ -323,7 +323,8 @@ function rSourceObjects(){
  <p class="sub">One row per page, model-table partition and source object. Repeated references are deduplicated; unknown sources stay visible. Resolved means identified statically, not checked against a live database. Partial means some context or coverage remains uncertain.</p>
  <div class="filter-row"><input id="source-object-search" class="search" style="margin:0" aria-label="Search source objects" placeholder="Search report, source object, connection or code…" oninput="filterSourceObjects()">
  <select id="source-object-status" class="search" style="width:auto;margin:0" aria-label="Filter source extraction status" onchange="filterSourceObjects()"><option value="">All extraction statuses</option>${['Resolved','Partial','Unresolved','Not applicable'].map(x=>`<option>${x}</option>`).join('')}</select>
- <button class="chip" onclick="downloadSourceObjectsCsv()">Export source objects CSV</button></div>
+ <button class="chip" onclick="downloadSourceObjectsCsv(false)">Export source objects CSV (no code)</button>
+ <button class="chip" onclick="downloadSourceObjectsCsv()">Export source objects CSV (with code)</button></div>
  <p id="source-object-count" class="mut" aria-live="polite"></p>
  <div class="column-scroll"><table class="t"><thead><tr><th>Report / page</th><th>Model table / query</th><th>Source type</th><th>Server / connection</th><th>Database / service</th><th>Schema</th><th>Source object</th><th>Status / original code</th></tr></thead><tbody id="source-object-rows"></tbody></table></div>`;
 }
@@ -341,6 +342,7 @@ function filterSourceObjects(){
  <b>Extracted SQL</b><pre class="code">${esc(r.sql)||'No resolved native SQL text.'}</pre>
  ${r.referencedM?`<b>Referenced M queries / parameters</b><pre class="code">${esc(r.referencedM)}</pre>`:''}</div></details></td></tr>`).join('')||'<tr><td colspan="8">No source objects match this selection.</td></tr>';
 }
-function downloadSourceObjectsCsv(){
- exportCsvFile(inventoryCsv(visibleSourceObjects,sourceObjectCsvFields),'source-objects.csv');
+function downloadSourceObjectsCsv(includeCode=true){
+ const fields=includeCode?sourceObjectCsvFields:sourceObjectCsvFields.filter(([key])=>!['originalM','sql','referencedM'].includes(key));
+ exportCsvFile(inventoryCsv(visibleSourceObjects,fields),includeCode?'source-objects.csv':'source-objects-no-code.csv');
 }

@@ -148,6 +148,9 @@ class SourceObjectInventoryTests(unittest.TestCase):
     def test_generated_sources_csv_keeps_full_code_and_page_filter(self):
         p, _ = self.payload()
         next(r for r in p['sourceObjects'] if r['table']=='Sales')['originalM'] += '\n// ' + ('x' * 20000) + '\n// <script>marker</script>'
+        for row in p['sourceObjects']:
+            row['referencedM'] = '// Referenced query: Stage\r\nlet\n\tS = Sql.Database("server", "db")\nin S'
+            row['server'] = 'server,with\ttab and "quotes"'
         html = render_html(p, self.root / 'objects.html')
         target = self.root / 'objects.csv'
         result = subprocess.run(['node', str(Path(__file__).with_name('check_source_objects.cjs')), str(html), str(target)], text=True,capture_output=True)
@@ -158,3 +161,13 @@ class SourceObjectInventoryTests(unittest.TestCase):
         self.assertEqual(len(rows),len(source_rows))
         self.assertEqual(rows[0]['Original M code'],source_rows[0]['originalM'])
         self.assertEqual(rows[0]['Extracted SQL'],source_rows[0]['sql'])
+
+        self.assertEqual(rows[0]['Referenced M code'], source_rows[0]['referencedM'])
+        with Path(str(target)+'.no-code.csv').open(encoding='utf-8-sig', newline='') as f:
+            no_code = list(csv.DictReader(f))
+        expected = [r for r in rows if r['Page ID']=='p2']
+        excluded = {'Original M code', 'Extracted SQL', 'Referenced M code'}
+        self.assertEqual(no_code, [{k:v for k,v in r.items() if k not in excluded} for r in expected])
+        self.assertEqual(len(no_code), 2)
+        self.assertEqual(no_code[0]['Server / connection'], source_rows[0]['server'])
+        self.assertNotIn('// Referenced query:', Path(str(target)+'.no-code.csv').read_text())

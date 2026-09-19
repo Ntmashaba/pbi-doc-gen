@@ -17,5 +17,8 @@ node('source-object-search').value='Orders';run('filterSourceObjects()');
 assert.equal(run('visibleSourceObjects.length'),6);
 run('downloadSourceObjectsCsv()');assert.equal(filename,'Sales-source-objects.csv');
 fs.writeFileSync(process.argv[3],Buffer.from(await blob.arrayBuffer()));
+run("setPageScope('p2');downloadSourceObjectsCsv(false)");
+assert.equal(filename,'Sales-source-objects-no-code.csv');
+fs.writeFileSync(process.argv[3]+'.no-code.csv',Buffer.from(await blob.arrayBuffer()));
 console.log('Source objects CSV and UI checks passed.');
 })().catch(e=>{console.error(e);process.exit(1)});
