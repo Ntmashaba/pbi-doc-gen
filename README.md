@@ -77,6 +77,69 @@ All browser CSV filenames now include the report name (with filename-unsafe
 characters replaced). Explicit command-line `--csv PATH` destinations are
 unchanged. Regenerate the HTML to obtain the new export button.
 
+## Source objects from M and embedded SQL
+
+The **Sources** view now contains a searchable page-level source-object inventory
+and **Export source objects CSV**, downloaded as `<report name>-source-objects.csv`.
+It follows the shared report-page selector and its own search/status filters.
+The existing three-column M-query CSV is still available and still covers the
+whole model. All six browser CSV exports include the report name.
+
+The new inventory includes report, page and stable page ID, model table, partition,
+query name, source type, server/connection, database/service, schema, source object,
+page usage, extraction status, notes, evidence, original M, extracted SQL and any
+referenced M definitions. The JSON payload exposes the same rows as `sourceObjects`.
+The existing `tableSources` inventory remains the partition-level connection
+summary; `sourceObjects` is the new object-level inventory. Word/agent exports
+retain their existing summaries rather than duplicating all original code.
+
+**View source code** expands the original partition M, resolved native SQL,
+referenced staging queries/parameters and extraction evidence. CSV cells contain
+complete code without truncation, including newlines and escaped quotes. As with
+other exports, spreadsheet-formula-like cells receive a protective apostrophe.
+Repeated object references are combined within a model-table partition and page;
+objects reached through separate partitions retain their distinct code/provenance.
+Multiple statements for one object are preserved with a labelled separator.
+
+Supported patterns include:
+
+- SQL Server `Sql.Database`/`Sql.Databases`, Oracle `Oracle.Database`, Teradata
+  `Teradata.Database`, and `Odbc.Query`/`Odbc.DataSource`.
+- Native SQL in a connector's `Query` option or `Value.NativeQuery`.
+- Static `let` steps, quoted step names, literal shared parameters, text
+  concatenation, referenced M queries, navigation records and common table
+  transformations/joins/appends. Unused `let` steps do not become output sources.
+- SQL joins, comma-separated sources, derived subqueries, scoped CTEs (including
+  recursive references), quoted names and qualified cross-database objects.
+  CTE names/aliases, strings and comments are not listed as physical objects.
+
+The extractor is a conservative standard-library scanner, **not a complete M or
+SQL interpreter**. It does not execute queries, inspect live catalogs, resolve
+views to their underlying tables, or verify that named objects exist. Unsupported
+functions, dynamic SQL, unresolved parameters, ambiguous connections and cyclic
+references retain review notes and coverage gaps. No table/view distinction is
+required: both are labelled source objects.
+
+| Status | Meaning |
+|---|---|
+| Resolved | A source identity was extracted statically from supported expressions. This is not live verification. |
+| Partial | An object was identified, but connection context, qualification or query coverage remains uncertain. |
+| Unresolved | A source expression or coverage gap did not resolve to an object. |
+| Not applicable | The partition declares no direct external M/SQL source, such as a calculated model table. Inspect its upstream model-table dependencies. |
+
+Oracle connection aliases are retained rather than guessed into physical hosts;
+a literal `host:port/service` keeps the service separately. Teradata's two-part
+SQL names are interpreted as database/object. SQL Server four-part names may
+contain linked-server aliases and are marked for review. ODBC DSNs need external
+configuration; credentials are not copied into connection-identity fields.
+A SQL `USE` statement makes a default database unresolved instead of silently
+assigning objects to the original connection database. Unqualified object names
+retain a default-namespace caveat. Original M/SQL is retained verbatim for review.
+
+This feature is tested using synthetic expressions and generated HTML/CSV checks.
+Real-browser verification is still blocked by the previously recorded Chromium
+download failure; no live database or real user PBIP validation is claimed.
+
 ## Which columns are used, and which can be deleted?
 
 ### Report, table and source summary
@@ -497,7 +560,7 @@ The context bar exposes analysis-coverage issues. Comparison now includes shared
 expressions, calculation groups and detail rows; it rejects unsupported future
 extract schemas.
 
-Run `python tests/run_ci.py` for the strict regression gate (38 tests minimum,
+Run `python tests/run_ci.py` for the strict regression gate (55 tests minimum,
 no skipped tests). GitHub Actions runs this plus Chromium checks. For the browser
 gate locally, install `playwright@1.62.1` with npm, install its Chromium binary,
 run `python tests/build_browser_fixture.py`, then run

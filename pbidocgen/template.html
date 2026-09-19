@@ -212,6 +212,7 @@ function switchTab(id){
   if(id==="columns") filterColumns();
   if(id==="tables") fTbl(document.getElementById("table-search").value);
   if(id==="manifest") fMan(document.getElementById("manifest-search").value);
+  if(id==="sources") filterSourceObjects();
   if(id==="measures") fMea(document.getElementById("measure-search").value);
 }
 
@@ -659,27 +660,11 @@ function drawERD(){
 
 /* ============================================================ sources */
 function rSources(){
-  const groups = {};
-  for(const t of scopedTables()) for(const p of t.partitions){
-    const s = p.source;
-    const key = [s.sourceType, s.server, s.database].filter(Boolean).join(" · ") || s.sourceType;
-    (groups[key] = groups[key] || []).push({table:t.name, part:p});
-  }
-  const cards = Object.entries(groups).map(([key, rows])=>`
-    <div class="card">
-      <div class="eyebrow">${esc(rows[0].part.source.sourceType)}</div>
-      <div style="font-weight:650;margin:.15rem 0 .5rem">${esc(key)}</div>
-      <table class="t"><thead><tr><th>Model table</th><th>Source object</th><th>Mode</th><th></th></tr></thead><tbody>
-      ${rows.map(r=>{
-        const s=r.part.source;
-        const obj = s.schema&&s.object?`${s.schema}.${s.object}`:(s.object||s.detail||"—");
-        return `<tr><td>${tblLink(r.table)}</td><td><span class="ref">${esc(obj)}</span></td><td class="mut">${esc(r.part.mode)}</td><td>${s.nativeQuery?'<span class="badge b-warn">native query</span>':""}</td></tr>`;
-      }).join("")}</tbody></table>
-    </div>`).join("");
   return `${coupler()}<h1>Data sources</h1>
-  <div class="card"><button class="chip" onclick="downloadQueryCsv()">Export all M queries CSV</button>
-    <p class="mut">${(DATA.sourceQueries||[]).length} M queries and shared expressions across the complete model, regardless of the selected page. Columns: report, query name, query m code. SQL-only, DAX and entity partitions are excluded.</p></div>
-  <p class="sub">Where every table's data comes from, grouped by upstream system. Extracted statically from partition M expressions — parameterised or dynamically built connections may not resolve fully.</p>${cards}`;
+    <p class="sub">Source objects used by each report page, traced through supported M and embedded SQL. Objects may be tables or views; no database connection is made.</p>
+    <div class="card"><button class="chip" onclick="downloadQueryCsv()">Export all M queries CSV</button>
+    <p class="mut">${(DATA.sourceQueries||[]).length} M queries and shared expressions across the complete model. This three-column export is independent of page selection.</p></div>
+    ${rSourceObjects()}`;
 }
 
 /* ============================================================ security */

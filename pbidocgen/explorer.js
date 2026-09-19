@@ -303,3 +303,44 @@ TABS.splice(TABS.findIndex(t=>t.id==='filters'),0,{id:'layout',label:'Page layou
 TABS.push({id:'cleanup',label:'Cleanup review',group:'Quality',avail:has.model},
   {id:'compare',label:'Compare extracts',group:'Quality',avail:true});
 Object.assign(RENDER,{matrix:rMatrix,impact:rImpact,layout:rLayout,cleanup:rCleanup,compare:rCompare});
+
+
+/* Source-object lineage uses stable page IDs and the common CSV export path. */
+const sourceObjectCsvFields=[['report','Report'],['page','Report page'],['pageId','Page ID'],
+ ['pageScope','Page scope'],['pageUsage','Page usage'],['table','Model table'],['partition','Partition'],
+ ['queryName','Query name'],['sourceType','Source type'],['server','Server / connection'],
+ ['database','Database / service'],['schema','Schema'],['object','Source object'],
+ ['status','Extraction status'],['notes','Review notes'],['evidence','Extraction evidence'],
+ ['originalM','Original M code'],['sql','Extracted SQL'],['referencedM','Referenced M code']];
+let visibleSourceObjects=[];
+function sourceObjectRows(q='',status=''){
+ q=q.trim().toLowerCase();
+ return (DATA.sourceObjects||[]).filter(inPageScope).filter(r=>(!status||r.status===status)&&
+  (!q||Object.values(r).join(' ').toLowerCase().includes(q)));
+}
+function rSourceObjects(){
+ return `<h2>Report page → source object</h2>
+ <p class="sub">One row per page, model-table partition and source object. Repeated references are deduplicated; unknown sources stay visible. Resolved means identified statically, not checked against a live database. Partial means some context or coverage remains uncertain.</p>
+ <div class="filter-row"><input id="source-object-search" class="search" style="margin:0" aria-label="Search source objects" placeholder="Search report, source object, connection or code…" oninput="filterSourceObjects()">
+ <select id="source-object-status" class="search" style="width:auto;margin:0" aria-label="Filter source extraction status" onchange="filterSourceObjects()"><option value="">All extraction statuses</option>${['Resolved','Partial','Unresolved','Not applicable'].map(x=>`<option>${x}</option>`).join('')}</select>
+ <button class="chip" onclick="downloadSourceObjectsCsv()">Export source objects CSV</button></div>
+ <p id="source-object-count" class="mut" aria-live="polite"></p>
+ <div class="column-scroll"><table class="t"><thead><tr><th>Report / page</th><th>Model table / query</th><th>Source type</th><th>Server / connection</th><th>Database / service</th><th>Schema</th><th>Source object</th><th>Status / original code</th></tr></thead><tbody id="source-object-rows"></tbody></table></div>`;
+}
+function filterSourceObjects(){
+ visibleSourceObjects=sourceObjectRows(document.getElementById('source-object-search').value,document.getElementById('source-object-status').value);
+ document.getElementById('source-object-count').textContent=`${visibleSourceObjects.length} source-object/page rows`;
+ document.getElementById('source-object-rows').innerHTML=visibleSourceObjects.map(r=>`<tr>
+ <td>${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)} · ${esc(r.pageUsage)}</div></td>
+ <td>${esc(r.table)}<div class="mut">${esc(r.queryName)}</div></td><td>${esc(r.sourceType)}</td>
+ <td>${esc(r.server)||'Unresolved / not supplied'}</td><td>${esc(r.database)||'Unresolved / not supplied'}</td>
+ <td>${esc(r.schema)||'—'}</td><td><b>${esc(r.object)||'No object resolved'}</b></td>
+ <td><span class="badge ${r.status==='Resolved'?'b-direct':r.status==='Not applicable'?'b-other':'b-warn'}">${esc(r.status)}</span>
+ <details><summary>View source code</summary><div class="body"><b>Extraction evidence</b><p>${esc(r.evidence)}</p><p>${listText(r.notes)}</p>
+ <b>Original M code</b><pre class="code">${esc(r.originalM)||'No M expression for this partition.'}</pre>
+ <b>Extracted SQL</b><pre class="code">${esc(r.sql)||'No resolved native SQL text.'}</pre>
+ ${r.referencedM?`<b>Referenced M queries / parameters</b><pre class="code">${esc(r.referencedM)}</pre>`:''}</div></details></td></tr>`).join('')||'<tr><td colspan="8">No source objects match this selection.</td></tr>';
+}
+function downloadSourceObjectsCsv(){
+ exportCsvFile(inventoryCsv(visibleSourceObjects,sourceObjectCsvFields),'source-objects.csv');
+}

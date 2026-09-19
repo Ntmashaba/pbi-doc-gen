@@ -8,6 +8,7 @@ from pathlib import Path
 from .column_usage import build_column_usage
 from .source_inventory import build_source_inventory
 from .source_queries import build_source_queries
+from .source_objects import build_source_objects
 from .page_references import attach_report_locations, sync_page_usage, page_feed_rows
 
 TEMPLATE = Path(__file__).parent / "template.html"
@@ -35,6 +36,7 @@ def build_payload(model: dict | None, report: dict | None,
         "report": report,
         "linked": linked,
         "columns": columns,
+        "sourceObjects": build_source_objects(model, report, columns),
         "sourceQueries": build_source_queries(model, report),
         "tableSources": build_source_inventory(model, report, linked, columns) if model else [],
     }
