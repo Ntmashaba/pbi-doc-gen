@@ -165,6 +165,7 @@ class Tracer:
     def __init__(self, definitions=None):
         self.definitions = definitions or {}
         self.cache, self.active = {}, set()
+        self.current_query = ''
 
     def named(self, name):
         if name in self.cache:
@@ -176,18 +177,22 @@ class Tracer:
         if name not in self.definitions:
             return Value(issues=['Unresolved M reference: ' + name])
         self.active.add(name)
-        value = self.trace(self.definitions[name])
+        value = self.trace(self.definitions[name], name)
         self.active.remove(name)
         value.references[name] = self.definitions[name]
         self.cache[name] = copy.deepcopy(value)
         return value
 
-    def trace(self, code):
+    def trace(self, code, query_name=''):
+        previous = self.current_query
+        self.current_query = query_name
         try:
             ts = tokenize(code)
             return self.evaluate(ts, self.named)
         except (ValueError, RecursionError) as exc:
             return Value(issues=['M extraction incomplete: ' + str(exc)])
+        finally:
+            self.current_query = previous
 
     def evaluate(self, ts, resolve):
         if not ts:
@@ -327,7 +332,7 @@ class Tracer:
         kind = CONNECTORS[fn]
         server = args[0].text if args and args[0].kind == 'text' else ''
         database = args[1].text if fn == 'Sql.Database' and len(args) > 1 and args[1].kind == 'text' else ''
-        conn = dict(sourceType=kind, server=server or '', database=database or '', schema='')
+        conn = dict(sourceType=kind, server=server or '', database=database or '', schema='', primaryQuery=self.current_query)
         if not server:
             result.issues.append('Connection/server expression is unresolved')
         if fn.startswith('Odbc.'):
@@ -362,7 +367,7 @@ class Tracer:
             for conn in target.connections or [dict(sourceType='Unknown', server='', database='', schema='')]:
                 result.objects.append(dict(conn, object='', sql='', evidence='Unresolved native SQL', notes=['Native SQL text is dynamic or unavailable']))
             return result
-        connections = list({tuple(sorted(c.items())): c for c in target.connections}.values())
+        connections = list({tuple(sorted((k, v) for k, v in c.items() if k != 'primaryQuery')): c for c in target.connections}.values())
         if len(connections) != 1:
             result.issues.append('Native SQL target connection is ambiguous or unresolved')
             conn = dict(sourceType='Unknown', server='', database='', schema='')
@@ -396,6 +401,9 @@ class Tracer:
             # Keep a distinct coverage row so known objects do not hide an
             # unsupported source elsewhere in the same statement.
             result.objects.append(dict(conn, object='', sql=query.text, evidence='SQL coverage gap', notes=issues))
+        if len(connections) == 1:
+            for row in result.objects:
+                row['primaryQueries'] = sorted({c.get('primaryQuery', '') for c in target.connections} - {''})
         result.kind = 'table'
         return result
 
@@ -452,5 +460,7 @@ def materialize(value):
             notes.add('Database/service not supplied or unresolved')
         row['notes'] = sorted(notes)
         row['status'] = 'Unresolved' if not row['object'] else 'Partial' if notes else 'Resolved'
+        row['primaryQueries'] = row.get('primaryQueries') or ([row['primaryQuery']] if row.get('primaryQuery') else [])
+        row['referencedQueries'] = sorted(value.references)
         row['referencedM'] = '\n\n'.join(f'// Referenced query: {name}\n{code}' for name, code in sorted(value.references.items()))
     return rows

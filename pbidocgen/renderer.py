@@ -9,6 +9,7 @@ from .column_usage import build_column_usage
 from .source_inventory import build_source_inventory
 from .source_queries import build_source_queries
 from .source_objects import build_source_objects
+from .primary_sources import build_primary_sources
 from .page_references import attach_report_locations, sync_page_usage, page_feed_rows
 
 TEMPLATE = Path(__file__).parent / "template.html"
@@ -27,6 +28,7 @@ def build_payload(model: dict | None, report: dict | None,
     if report:
         for page in report["pages"]:
             page["feeds"] = page_feed_rows({"columns": columns, "report": report}, page)
+    source_objects = build_source_objects(model, report, columns)
     return {
         "schemaVersion": 2,
         "title": title,
@@ -36,7 +38,8 @@ def build_payload(model: dict | None, report: dict | None,
         "report": report,
         "linked": linked,
         "columns": columns,
-        "sourceObjects": build_source_objects(model, report, columns),
+        "sourceObjects": source_objects,
+        "primarySources": build_primary_sources(model, report, source_objects),
         "sourceQueries": build_source_queries(model, report),
         "tableSources": build_source_inventory(model, report, linked, columns) if model else [],
     }

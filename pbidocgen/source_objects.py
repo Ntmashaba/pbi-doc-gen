@@ -3,9 +3,7 @@ from __future__ import annotations
 from .m_sources import Tracer, Value, materialize
 
 
-def build_source_objects(model, report, columns):
-    if not model:
-        return []
+def source_definitions(model):
     definitions = {}
     def add(name, code):
         if name in definitions and definitions[name] != code:
@@ -19,7 +17,13 @@ def build_source_objects(model, report, columns):
         parts = table.get('partitions', [])
         if len(parts) == 1 and parts[0]['type'] == 'm':
             add(table['name'], parts[0].get('expression') or '')
-    tracer = Tracer(definitions)
+    return definitions
+
+
+def build_source_objects(model, report, columns):
+    if not model:
+        return []
+    tracer = Tracer(source_definitions(model))
     rows = []
     report_name = report['name'] if report else 'Not supplied'
     for table in model['tables']:
@@ -32,11 +36,11 @@ def build_source_objects(model, report, columns):
             original_m = code if part['type'] == 'm' else ''
             query_name = table['name'] if len(parts) == 1 else table['name'] + ' / ' + part['name']
             if part['type'] == 'm':
-                extracted = materialize(tracer.trace(code))
+                extracted = materialize(tracer.trace(code, query_name))
             elif part['type'] == 'query':
                 source = part.get('source', {})
                 conn = dict(sourceType=source.get('sourceType') or 'SQL', server=source.get('server') or '',
-                            database=source.get('database') or '', schema='')
+                            database=source.get('database') or '', schema='', primaryQuery=query_name)
                 extracted = materialize(tracer.sql(Value(kind='connection', connections=[conn]), Value(kind='text', text=code)))
             elif part['type'] == 'entity':
                 source = part.get('source', {})
@@ -45,7 +49,7 @@ def build_source_objects(model, report, columns):
                     obj = obj[len(schema) + 1:]
                 extracted = [dict(sourceType=source.get('sourceType') or 'Entity', server=source.get('server') or '',
                                   database=source.get('database') or '', schema=schema, object=obj,
-                                  sql='', referencedM='', evidence='Entity partition metadata',
+                                  sql='', referencedM='', primaryQueries=[query_name], evidence='Entity partition metadata',
                                   notes=['Physical connection may require external metadata'], status='Partial' if obj else 'Unresolved')]
             else:
                 extracted = [dict(sourceType='Calculated model table' if part['type'] == 'calculated' else 'No partition',
@@ -62,6 +66,7 @@ def build_source_objects(model, report, columns):
                 else:
                     old = unique[key]
                     old['notes'] = sorted(set(old['notes']) | set(item['notes']))
+                    old['primaryQueries'] = sorted(set(old.get('primaryQueries', [])) | set(item.get('primaryQueries', [])))
                     old['sqlTexts'] = list(dict.fromkeys(old['sqlTexts'] + ([item['sql']] if item['sql'] else [])))
                     old['evidenceItems'] = list(dict.fromkeys(old['evidenceItems'] + [item['evidence']]))
                     if item['status'] in {'Partial', 'Unresolved'}:

@@ -213,6 +213,7 @@ function switchTab(id){
   if(id==="tables") fTbl(document.getElementById("table-search").value);
   if(id==="manifest") fMan(document.getElementById("manifest-search").value);
   if(id==="sources") filterSourceObjects();
+  if(id==="primary-sources") filterPrimarySources();
   if(id==="measures") fMea(document.getElementById("measure-search").value);
 }
 
@@ -661,6 +662,7 @@ function drawERD(){
 /* ============================================================ sources */
 function rSources(){
   return `${coupler()}<h1>Data sources</h1>
+    <p><button class="chip" onclick="switchTab('primary-sources')">View primary sources only</button></p>
     <p class="sub">Source objects used by each report page, traced through supported M and embedded SQL. Objects may be tables or views; no database connection is made.</p>
     <div class="card"><button class="chip" onclick="downloadQueryCsv()">Export all M queries CSV</button>
     <p class="mut">${(DATA.sourceQueries||[]).length} M queries and shared expressions across the complete model. This three-column export is independent of page selection.</p></div>

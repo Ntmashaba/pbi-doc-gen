@@ -346,3 +346,42 @@ function downloadSourceObjectsCsv(includeCode=true){
  const fields=includeCode?sourceObjectCsvFields:sourceObjectCsvFields.filter(([key])=>!['originalM','sql','referencedM'].includes(key));
  exportCsvFile(inventoryCsv(visibleSourceObjects,fields),includeCode?'source-objects.csv':'source-objects-no-code.csv');
 }
+
+/* External identities only: never export raw code or free-form extraction evidence. */
+const primarySourceCsvFields=[['report','Report'],['page','Report page'],['pageId','Page ID'],
+ ['pageScope','Page scope'],['pageUsage','Page usage'],['sourceType','Source type'],
+ ['server','Server / connection'],['database','Database / service'],['schema','Schema'],
+ ['object','Source object'],['primaryQueries','Connection queries'],
+ ['consumingQueries','Consuming model queries'],['tables','Model tables'],['status','Extraction status']];
+let visiblePrimarySources=[];
+function rPrimarySources(){
+ return `<h1>Primary sources</h1>
+ <p class="sub">External connections and source objects, traced through referenced queries. One row per report page and source identity; multiple consumers are grouped. Connection queries open the external connection. Consuming model queries may use it directly, reference another query, or do both.</p>
+ <p class="mut">Supports SQL Server, Oracle, Teradata and ODBC tracing, plus native SQL and entity partition metadata. Other connectors and dynamic expressions may remain unresolved. Shared queries with no resolved model consumer appear under “No specific page”. Identification is static, not verified against a live database.</p>
+ <div class="filter-row"><input id="primary-source-search" class="search" style="margin:0" aria-label="Search primary sources" placeholder="Search connection, database, object or query…" oninput="filterPrimarySources()">
+ <button class="chip" onclick="downloadPrimarySourcesCsv()">Export primary sources CSV</button></div>
+ <p class="mut">Metadata only. Export replaces tabs and line breaks with spaces so each record occupies one physical line. No M code, SQL, referenced-query code or extraction evidence is included.</p>
+ <p id="primary-source-count" class="mut" aria-live="polite"></p>
+ <div id="primary-source-coverage"></div>
+ <div class="column-scroll"><table class="t"><thead><tr><th>Report / page</th><th>Type</th><th>Server / connection</th><th>Database / service</th><th>Schema</th><th>Source object</th><th>Connection queries</th><th>Consuming model queries / tables</th><th>Status</th></tr></thead><tbody id="primary-source-rows"></tbody></table></div>`;
+}
+function filterPrimarySources(){
+ const q=document.getElementById('primary-source-search').value.trim().toLowerCase();
+ const data=DATA.primarySources||{rows:[],unresolved:[]};
+ visiblePrimarySources=data.rows.filter(inPageScope).filter(r=>!q||primarySourceCsvFields.some(([key])=>String(r[key]??'').toLowerCase().includes(q)));
+ const unresolved=data.unresolved.filter(inPageScope);
+ document.getElementById('primary-source-count').textContent=`${visiblePrimarySources.length} primary-source/page rows`;
+ document.getElementById('primary-source-coverage').innerHTML=unresolved.length?`<details><summary>${unresolved.length} query/page entries have unresolved source coverage</summary><p>These entries are not included as identified primary sources. Known sources from partially resolved queries remain listed below. This coverage list follows the selected page, independently of search.</p><ul>${unresolved.map(r=>`<li>${esc(r.queryName)} — ${esc(r.page)||esc(r.pageScope)}</li>`).join('')}</ul></details>`:'';
+ document.getElementById('primary-source-rows').innerHTML=visiblePrimarySources.map(r=>`<tr>
+ <td>${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)} · ${listText(r.pageUsage)}</div></td>
+ <td>${esc(r.sourceType)}</td><td>${esc(r.server)||'Unresolved / not supplied'}</td><td>${esc(r.database)||'Unresolved / not supplied'}</td>
+ <td>${esc(r.schema)||'—'}</td><td>${esc(r.object)||'Object unresolved'}</td><td>${listText(r.primaryQueries)}</td>
+ <td>${listText(r.consumingQueries)}<div class="mut">${listText(r.tables)}</div></td><td>${esc(r.status)}</td></tr>`).join('')||'<tr><td colspan="9">No identified primary sources match this selection. Check unresolved coverage above.</td></tr>';
+}
+function downloadPrimarySourcesCsv(){
+ const singleLine=value=>(Array.isArray(value)?value.join('; '):String(value??'')).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g,' ');
+ const rows=visiblePrimarySources.map(row=>Object.fromEntries(primarySourceCsvFields.map(([key])=>[key,singleLine(row[key])])));
+ exportCsvFile(inventoryCsv(rows,primarySourceCsvFields),'primary-sources.csv');
+}
+TABS.splice(TABS.findIndex(t=>t.id==='sources'),0,{id:'primary-sources',label:'Primary sources',group:'Model',avail:has.model});
+RENDER['primary-sources']=rPrimarySources;

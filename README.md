@@ -57,6 +57,38 @@ model/unassigned scope; the comparison CSV expands affected pages into rows.
 The generated HTML remains one offline file: `explorer.js` and `explorer.css`
 are embedded during generation, so you do not need to distribute them beside it.
 
+## Primary sources view and export
+
+Use **Primary sources** in the Model navigation for a metadata-only inventory of
+external connections and source objects. **Connection queries** identifies the M
+query that calls the connector; **Consuming model queries** identifies the loaded
+queries that use that connection, directly or through reference chains. A query
+can open its own connection and reference another query at the same time.
+
+For example, `Sales Final → Sales Staging → Sql.Database(...)` shows the external
+server/database/object with `Sales Staging` as the connection query and `Sales
+Final` as a consuming model query. Repeated sources are grouped per report page
+and source identity, preserving distinct page IDs even when page names match.
+
+Search and the global page selector filter both the view and **Export primary
+sources CSV**. Its filename is `<report name>-primary-sources.csv`. Columns are:
+report, report page, page ID, page scope, page usage, source type, server/connection,
+database/service, schema, source object, connection queries, consuming model
+queries, model tables and extraction status.
+
+This export uses an explicit metadata field list: no M, SQL, referenced-query
+code, review notes or extraction evidence. Tabs, control characters and line
+breaks in metadata become spaces, so each CSV record occupies one physical line.
+Commas and double quotes still use standard CSV quoting. HTML/JSON keep full code
+in the existing source-object inventory for verification.
+
+SQL Server, Oracle, Teradata, ODBC, native SQL partitions and entity metadata are
+supported by the current tracer. Dynamic expressions and unsupported connectors
+are listed as unresolved coverage, not silently counted as identified sources.
+Known connections with unresolved objects remain visible. Unconsumed shared M
+sources appear without a page assignment; scalar parameters are not sources.
+The view is a static inventory, not a live connection test or a deletion verdict.
+
 ## Sources query CSV
 
 In **Sources**, choose **Export all M queries CSV**. It downloads
@@ -80,10 +112,10 @@ unchanged. Regenerate the HTML to obtain the new export button.
 ## Source objects from M and embedded SQL
 
 The **Sources** view now contains a searchable page-level source-object inventory
-and **Export source objects CSV**, downloaded as `<report name>-source-objects.csv`.
+and **Export source objects CSV (with code)**, downloaded as `<report name>-source-objects.csv`.
 It follows the shared report-page selector and its own search/status filters.
 The existing three-column M-query CSV is still available and still covers the
-whole model. All six browser CSV exports include the report name.
+whole model. All eight browser CSV exports include the report name.
 
 The new inventory includes report, page and stable page ID, model table, partition,
 query name, source type, server/connection, database/service, schema, source object,
@@ -560,7 +592,7 @@ The context bar exposes analysis-coverage issues. Comparison now includes shared
 expressions, calculation groups and detail rows; it rejects unsupported future
 extract schemas.
 
-Run `python tests/run_ci.py` for the strict regression gate (55 tests minimum,
+Run `python tests/run_ci.py` for the strict regression gate (62 tests minimum,
 no skipped tests). GitHub Actions runs this plus Chromium checks. For the browser
 gate locally, install `playwright@1.62.1` with npm, install its Chromium binary,
 run `python tests/build_browser_fixture.py`, then run
