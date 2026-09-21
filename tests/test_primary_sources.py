@@ -53,11 +53,11 @@ class PrimarySourceTests(unittest.TestCase):
             self.assertEqual(row['tables'], ['A', 'B', 'C'])
 
     def test_unsupported_and_cyclic_queries_are_coverage_gaps(self):
-        data = self.inventory({'Final': 'Table.Combine({Stage,Loop,Web.Contents("https://example.invalid")})'}, {
+        data = self.inventory({'Final': 'Table.Combine({Stage,Loop,CustomConnector.Contents("https://example.invalid")})'}, {
             'Stage': 'Sql.Database("sql","db",[Query="SELECT * FROM dbo.Orders"])', 'Loop': 'Loop'})
-        self.assertEqual(len(data['rows']), 2)
+        self.assertEqual(len(data['rows']), 4)
         self.assertEqual(len(data['unresolved']), 2)
-        self.assertTrue(all(r['status']=='Partial' for r in data['rows']))
+        self.assertTrue(all(r['status']=='Partial' for r in data['rows'] if r['sourceType']!='Unknown'))
         self.assertTrue(all(r['queryName']=='Final' for r in data['unresolved']))
 
     def test_dynamic_sql_retains_connection_without_inventing_object(self):
@@ -84,6 +84,7 @@ class PrimarySourceTests(unittest.TestCase):
             raw = raw_model()
             raw['model']['tables'][0]['partitions'][0]['source']['expression'] = 'Stage'
             raw['model']['expressions'] = [dict(name='Stage', kind='m', expression='Sql.Database("sql","db",[Query="SELECT * FROM dbo.Orders"])')]
+            raw['model']['expressions'] += [dict(name='Dormant', kind='m', expression='File.Contents("C:\\Dormant.csv")'), dict(name='Custom', kind='m', expression='CustomPlatform.Fetch("account")')]
             path = root / 'model.bim'
             path.write_text(json.dumps(raw))
             model, report = parse_model(path), report_fixture()
@@ -104,7 +105,14 @@ class PrimarySourceTests(unittest.TestCase):
             self.assertEqual(rows[0]['Connection queries'], 'Stage')
             self.assertEqual(rows[0]['Consuming model queries'], 'Sales')
             self.assertEqual(rows[0]['Server / connection'], 'sql, "quoted" server line break')
-            self.assertEqual(len(rows[0]), 14)
+            self.assertEqual(len(rows[0]), 24)
+            self.assertEqual(rows[0]['Configured storage modes'], 'import')
+            self.assertEqual(rows[0]['Reporting usage'], 'Potential reporting dependency')
+            with Path(str(target)+'.unassigned.csv').open(encoding='utf-8-sig', newline='') as f:
+                unassigned=list(csv.DictReader(f))
+            self.assertEqual(len(unassigned), 3)
+            self.assertEqual({r['Reporting usage'] for r in unassigned}, {'Report scope only', 'No model consumer found', 'Usage unresolved'})
+            self.assertTrue(all(r['Page ID']=='' for r in unassigned))
             text = target.read_text(encoding='utf-8-sig')
             self.assertEqual(len(text.splitlines()), 2)
             self.assertNotIn('CODE_MUST_NOT_LEAK', text)

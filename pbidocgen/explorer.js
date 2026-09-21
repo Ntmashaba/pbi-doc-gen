@@ -352,31 +352,38 @@ const primarySourceCsvFields=[['report','Report'],['page','Report page'],['pageI
  ['pageScope','Page scope'],['pageUsage','Page usage'],['sourceType','Source type'],
  ['server','Server / connection'],['database','Database / service'],['schema','Schema'],
  ['object','Source object'],['primaryQueries','Connection queries'],
- ['consumingQueries','Consuming model queries'],['tables','Model tables'],['status','Extraction status']];
+ ['consumingQueries','Consuming model queries'],['tables','Model tables'],['status','Extraction status'],
+ ['location','File / folder / URL'],['dependencyStatus','Dependency status'],['reportingStatus','Reporting usage'],
+ ['usageConfidence','Usage confidence'],['runtimeStatus','Runtime / refresh status'],['usageEvidence','Usage evidence'],
+ ['preparationEffects','Preparation effects'],['definitionQueries','Definition queries'],['removalAssessment','Removal assessment'],['storageModes','Configured storage modes']];
 let visiblePrimarySources=[];
 function rPrimarySources(){
  return `<h1>Primary sources</h1>
- <p class="sub">External connections and source objects, traced through referenced queries. One row per report page and source identity; multiple consumers are grouped. Connection queries open the external connection. Consuming model queries may use it directly, reference another query, or do both.</p>
- <p class="mut">Supports SQL Server, Oracle, Teradata and ODBC tracing, plus native SQL and entity partition metadata. Other connectors and dynamic expressions may remain unresolved. Shared queries with no resolved model consumer appear under “No specific page”. Identification is static, not verified against a live database.</p>
+ <p class="sub">External connections and source objects, traced through referenced queries. One row per report page and external input; multiple consumers are grouped. Connection queries open the external connection. Consuming model queries may use it directly, reference another query, or do both.</p>
+ <p class="mut">Includes SQL Server, Oracle, Teradata, ODBC, SharePoint files/lists, local/network files, folders, web/API, OData and Azure storage. Other connectors remain unresolved; this is not the complete Power BI connector catalogue. Shared queries with no resolved model consumer appear under “No specific page”.</p>
  <div class="filter-row"><input id="primary-source-search" class="search" style="margin:0" aria-label="Search primary sources" placeholder="Search connection, database, object or query…" oninput="filterPrimarySources()">
+ <select id="primary-source-usage" class="search" style="width:auto;margin:0" aria-label="Filter primary sources by reporting usage" onchange="filterPrimarySources()"><option value="">All reporting usage</option>${['Potential reporting dependency','Possible model dependency','Report scope only','No reporting usage found','No model consumer found','Usage unresolved'].map(x=>`<option>${x}</option>`).join('')}</select>
  <button class="chip" onclick="downloadPrimarySourcesCsv()">Export primary sources CSV</button></div>
- <p class="mut">Metadata only. Export replaces tabs and line breaks with spaces so each record occupies one physical line. No M code, SQL, referenced-query code or extraction evidence is included.</p>
+ <p class="mut">Reporting usage is separate from source identification. Page usage describes the downstream model table; an external input’s contribution to displayed values is not proven. Merges and filters may affect results without supplying visible columns. Load/refresh execution is not observed. No reporting usage found is not a deletion verdict.</p>
+ <p class="mut">Metadata only. Export replaces tabs and line breaks with spaces so each record occupies one physical line. No M code, SQL, referenced-query code or raw extraction notes are included. Usage evidence is a short assessment, not source code.</p>
  <p id="primary-source-count" class="mut" aria-live="polite"></p>
  <div id="primary-source-coverage"></div>
- <div class="column-scroll"><table class="t"><thead><tr><th>Report / page</th><th>Type</th><th>Server / connection</th><th>Database / service</th><th>Schema</th><th>Source object</th><th>Connection queries</th><th>Consuming model queries / tables</th><th>Status</th></tr></thead><tbody id="primary-source-rows"></tbody></table></div>`;
+ <div class="column-scroll"><table class="t"><thead><tr><th>Report / page</th><th>Type</th><th>Server / connection</th><th>Database / service</th><th>Schema</th><th>Source object / file / URL</th><th>Connection queries</th><th>Consuming model queries / tables</th><th>Source identification</th><th>Reporting usage / dependency</th></tr></thead><tbody id="primary-source-rows"></tbody></table></div>`;
 }
 function filterPrimarySources(){
  const q=document.getElementById('primary-source-search').value.trim().toLowerCase();
  const data=DATA.primarySources||{rows:[],unresolved:[]};
- visiblePrimarySources=data.rows.filter(inPageScope).filter(r=>!q||primarySourceCsvFields.some(([key])=>String(r[key]??'').toLowerCase().includes(q)));
+ const usage=document.getElementById('primary-source-usage').value;
+ visiblePrimarySources=data.rows.filter(inPageScope).filter(r=>(!usage||r.reportingStatus===usage)&&(!q||primarySourceCsvFields.some(([key])=>String(r[key]??'').toLowerCase().includes(q))));
  const unresolved=data.unresolved.filter(inPageScope);
- document.getElementById('primary-source-count').textContent=`${visiblePrimarySources.length} primary-source/page rows`;
- document.getElementById('primary-source-coverage').innerHTML=unresolved.length?`<details><summary>${unresolved.length} query/page entries have unresolved source coverage</summary><p>These entries are not included as identified primary sources. Known sources from partially resolved queries remain listed below. This coverage list follows the selected page, independently of search.</p><ul>${unresolved.map(r=>`<li>${esc(r.queryName)} — ${esc(r.page)||esc(r.pageScope)}</li>`).join('')}</ul></details>`:'';
+ document.getElementById('primary-source-count').textContent=`${visiblePrimarySources.length} external-input/page rows (including unresolved coverage)`;
+ document.getElementById('primary-source-coverage').innerHTML=unresolved.length?`<details><summary>${unresolved.length} query/page entries have unresolved source coverage</summary><p>These entries are retained as unresolved rows in the view and export. Known sources from partially resolved queries also remain listed. This coverage list follows the selected page, independently of search.</p><ul>${unresolved.map(r=>`<li>${esc(r.queryName)} — ${esc(r.page)||esc(r.pageScope)}</li>`).join('')}</ul></details>`:'';
  document.getElementById('primary-source-rows').innerHTML=visiblePrimarySources.map(r=>`<tr>
  <td>${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)} · ${listText(r.pageUsage)}</div></td>
  <td>${esc(r.sourceType)}</td><td>${esc(r.server)||'Unresolved / not supplied'}</td><td>${esc(r.database)||'Unresolved / not supplied'}</td>
- <td>${esc(r.schema)||'—'}</td><td>${esc(r.object)||'Object unresolved'}</td><td>${listText(r.primaryQueries)}</td>
- <td>${listText(r.consumingQueries)}<div class="mut">${listText(r.tables)}</div></td><td>${esc(r.status)}</td></tr>`).join('')||'<tr><td colspan="9">No identified primary sources match this selection. Check unresolved coverage above.</td></tr>';
+ <td>${esc(r.schema)||'—'}</td><td>${esc(r.object)||'Object unresolved'}<div class="mut">${esc(r.location)}</div></td><td>${listText(r.primaryQueries)}</td>
+ <td>${listText(r.consumingQueries)}<div class="mut">${listText(r.tables)}</div></td><td>${esc(r.status)}</td>
+ <td><b>${esc(r.reportingStatus)}</b><div>${listText(r.dependencyStatus)}</div><details><summary>Usage evidence</summary><p>${listText(r.usageEvidence)}</p><p>${listText(r.preparationEffects)}</p><p>Configured storage modes: ${listText(r.storageModes)}</p><p>Confidence: ${esc(r.usageConfidence)}. ${esc(r.runtimeStatus)}.</p></details></td></tr>`).join('')||'<tr><td colspan="10">No identified primary sources match this selection. Check unresolved coverage above.</td></tr>';
 }
 function downloadPrimarySourcesCsv(){
  const singleLine=value=>(Array.isArray(value)?value.join('; '):String(value??'')).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g,' ');

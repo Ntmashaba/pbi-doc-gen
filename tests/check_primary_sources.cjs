@@ -13,9 +13,14 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  assert.equal(run('visiblePrimarySources.length'),0);
  node('primary-source-search').value='Orders';run('filterPrimarySources()');
  assert.equal(run('visiblePrimarySources.length'),1);
+ node('primary-source-usage').value='No reporting usage found';run('filterPrimarySources()');assert.equal(run('visiblePrimarySources.length'),0);
+ node('primary-source-usage').value='Potential reporting dependency';run('filterPrimarySources()');assert.equal(run('visiblePrimarySources.length'),1);
  run('downloadPrimarySourcesCsv()');assert.equal(filename,'Sales-primary-sources.csv');
  fs.writeFileSync(process.argv[3],Buffer.from(await blob.arrayBuffer()));
- run("setPageScope('*')");assert.equal(run('visiblePrimarySources.length'),3);
- run("setPageScope('')");assert.equal(run('visiblePrimarySources.length'),1);
+ node('primary-source-usage').value='';node('primary-source-search').value='';
+ run("setPageScope('*')");assert.equal(run('visiblePrimarySources.length'),5);
+ run("setPageScope('')");assert.equal(run('visiblePrimarySources.length'),3);
+ run('downloadPrimarySourcesCsv()');
+ fs.writeFileSync(process.argv[3]+'.unassigned.csv',Buffer.from(await blob.arrayBuffer()));
  console.log('Primary-source UI, filters and export checks passed.');
 })().catch(e=>{console.error(e);process.exit(1)});

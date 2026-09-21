@@ -66,6 +66,7 @@ def build_source_objects(model, report, columns):
                 else:
                     old = unique[key]
                     old['notes'] = sorted(set(old['notes']) | set(item['notes']))
+                    old['preparationEffects'] = sorted(set(old.get('preparationEffects', [])) | set(item.get('preparationEffects', [])))
                     old['primaryQueries'] = sorted(set(old.get('primaryQueries', [])) | set(item.get('primaryQueries', [])))
                     old['sqlTexts'] = list(dict.fromkeys(old['sqlTexts'] + ([item['sql']] if item['sql'] else [])))
                     old['evidenceItems'] = list(dict.fromkeys(old['evidenceItems'] + [item['evidence']]))
@@ -77,5 +78,7 @@ def build_source_objects(model, report, columns):
                 for usage in usages:
                     rows.append(dict(item, report=report_name, page=usage['page'], pageId=usage['pageId'],
                                      pageScope=usage['scope'], pageUsage=usage['usage'], table=table['name'],
-                                     partition=part['name'], queryName=query_name, originalM=original_m))
+                                     partition=part['name'], queryName=query_name, originalM=original_m,
+                                     pageKinds=usage.get('kinds', []), pageEvidence=usage.get('evidence', []),
+                                     storageMode=part.get('mode') or 'Not supplied'))
     return sorted(rows, key=lambda r: tuple(r[k] for k in ('table', 'partition', 'pageId', 'sourceType', 'server', 'database', 'schema', 'object')))

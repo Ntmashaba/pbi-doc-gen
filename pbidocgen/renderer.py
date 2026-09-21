@@ -39,7 +39,7 @@ def build_payload(model: dict | None, report: dict | None,
         "linked": linked,
         "columns": columns,
         "sourceObjects": source_objects,
-        "primarySources": build_primary_sources(model, report, source_objects),
+        "primarySources": build_primary_sources(model, report, source_objects, (columns or {}).get("issues")),
         "sourceQueries": build_source_queries(model, report),
         "tableSources": build_source_inventory(model, report, linked, columns) if model else [],
     }

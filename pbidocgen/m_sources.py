@@ -9,6 +9,7 @@ import copy
 import re
 from dataclasses import dataclass, field
 from .sql_sources import extract_sql_objects
+from .external_sources import EXTERNAL, READERS, external_value, navigate_external
 
 
 @dataclass
@@ -135,6 +136,7 @@ class Value:
     members: dict = field(default_factory=dict)
     issues: list = field(default_factory=list)
     references: dict = field(default_factory=dict)
+    effects: list = field(default_factory=list)
 
 
 def union(values, issue=None):
@@ -144,6 +146,7 @@ def union(values, issue=None):
         result.objects += copy.deepcopy(value.objects)
         result.issues += value.issues
         result.references.update(value.references)
+        result.effects += value.effects
     if issue:
         result.issues.append(issue)
     return result
@@ -265,9 +268,9 @@ class Tracer:
                     eq = list(top_positions(item, '='))
                     if not item:
                         continue
-                    if not eq or eq[0] != 1:
+                    if not eq or not eq[0] or any(t.kind != 'id' for t in item[:eq[0]]):
                         return Value(issues=['Row/record expression is not a static record'])
-                    members[item[0].value] = self.evaluate(item[2:], resolve)
+                    members[' '.join(t.value for t in item[:eq[0]])] = self.evaluate(item[eq[0]+1:], resolve)
                 result = union(members.values())
                 result.kind, result.members = 'record', members
                 return result
@@ -291,7 +294,7 @@ class Tracer:
         if ts[0].kind == 'id' and 1 in pairs and pairs[1] == len(ts) - 1:
             fn = ts[0].value
             arg_tokens = split(ts[2:-1])
-            if fn in TRANSFORMS:
+            if fn in TRANSFORMS or fn in READERS:
                 first = self.evaluate(arg_tokens[0], resolve)
                 # Simple row transformations preserve the input lineage. If an
                 # argument calls code, inspect it conservatively for more input.
@@ -299,8 +302,31 @@ class Tracer:
                 for arg in arg_tokens[1:]:
                     if any(t.kind == 'id' and i + 1 < len(arg) and arg[i + 1].value == '(' for i, t in enumerate(arg)):
                         extra.append(self.evaluate(arg, resolve))
-                return union([first] + extra)
+                result = union([first] + extra)
+                if fn in READERS:
+                    for conn in result.connections:
+                        if conn.get('navigationMode'):
+                            conn['navigationMode'] = 'document'
+                if fn == 'Table.SelectRows':
+                    # Predicate references can influence rows without contributing
+                    # displayed columns. Retain these as potential dependencies.
+                    for token in arg_tokens[1] if len(arg_tokens)>1 else []:
+                        if token.kind == 'id':
+                            candidate = resolve(token.value)
+                            if candidate.connections or candidate.objects:
+                                result = union([result, candidate])
+                    selected = self.external_filter(arg_tokens[1], resolve) if len(arg_tokens)>1 else None
+                    if selected:
+                        refined = navigate_external(result, selected)
+                        if refined is not None:
+                            result = refined
+                    result.effects.append('Row filter; may affect which records reach the model')
+                elif fn in {'Table.SelectColumns', 'Table.RemoveColumns'}:
+                    result.effects.append('Column selection/removal; surviving source-column contribution not proven')
+                return result
             args = [self.evaluate(arg, resolve) for arg in arg_tokens if arg]
+            if fn in EXTERNAL:
+                return external_value(self, fn, args)
             if fn in CONNECTORS:
                 return self.connector(fn, args)
             if fn == 'Value.NativeQuery':
@@ -310,8 +336,12 @@ class Tracer:
             if fn in COMBINES:
                 # Join key/column lists are scalar metadata, not data sources.
                 if fn in {'Table.Join', 'Table.NestedJoin'} and len(args) >= 3:
-                    return union([args[0], args[2]])
-                return union(args)
+                    result = union([args[0], args[2]])
+                    result.effects.append('Merge/join; inputs may affect row counts or filtering without supplying displayed columns')
+                    return result
+                result = union(args)
+                result.effects.append('Combined inputs; source-column contribution not proven')
+                return result
             function = resolve(fn)
             if function.references or function.connections or function.objects:
                 args.append(function)
@@ -325,6 +355,24 @@ class Tracer:
                 if candidate.connections or candidate.objects:
                     values.append(candidate)
         return union(values, 'Unsupported/dynamic M expression; source coverage is incomplete')
+
+    def external_filter(self, ts, resolve):
+        # Only exact conjunctions of Name/Folder Path equalities are refined.
+        # OR, functions, index access and dynamic predicates retain the collection.
+        if not ts or ts[0].value != 'each':
+            return None
+        fields = {}
+        for part in split(ts[1:], 'and'):
+            pairs = pairs_for(part)
+            end = pairs.get(0)
+            if end is None or part[0].value != '[' or end+1 >= len(part) or part[end+1].value != '=':
+                return None
+            key = ' '.join(t.value for t in part[1:end]).lower()
+            value = self.evaluate(part[end+2:], resolve)
+            if key not in {'name', 'folder path'} or value.kind != 'text' or key in fields:
+                return None
+            fields[key] = value.text
+        return fields if 'name' in fields else None
 
     def connector(self, fn, args):
         result = union(args)
@@ -412,11 +460,16 @@ class Tracer:
         if record.kind != 'record' or not base.connections:
             result.issues.append('Navigation target or key is unresolved')
             return result
+        if base.connections and all(c.get('navigationMode') in {'file', 'document', 'endpoint'} for c in base.connections):
+            return result
         fields = {k.lower(): v.text for k, v in record.members.items() if v.kind == 'text'}
         if len(fields) != len(record.members):
             result.issues.append('Navigation uses a nonliteral key')
             result.objects = [dict(c, object='', sql='', evidence='Unresolved navigation', notes=['Navigation uses a nonliteral key']) for c in base.connections]
             return result
+        external = navigate_external(result, fields)
+        if external is not None:
+            return external
         kind = (fields.get('kind') or '').lower()
         name = fields.get('item') or fields.get('name')
         result.connections, result.objects = [], []
@@ -456,10 +509,11 @@ def materialize(value):
         notes = set(row.get('notes', [])) | set(value.issues)
         if not row.get('server'):
             notes.add('Server/connection unresolved')
-        if not row.get('database'):
+        if not row.get('database') and not row.get('navigationMode'):
             notes.add('Database/service not supplied or unresolved')
         row['notes'] = sorted(notes)
         row['status'] = 'Unresolved' if not row['object'] else 'Partial' if notes else 'Resolved'
+        row['preparationEffects'] = sorted(set(value.effects))
         row['primaryQueries'] = row.get('primaryQueries') or ([row['primaryQuery']] if row.get('primaryQuery') else [])
         row['referencedQueries'] = sorted(value.references)
         row['referencedM'] = '\n\n'.join(f'// Referenced query: {name}\n{code}' for name, code in sorted(value.references.items()))
