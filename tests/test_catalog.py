@@ -94,8 +94,8 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual({s['label'] for s in summary['sources']},
                          {'SQL Server \u00b7 finance-sql.corp.local / FinanceDW',
                           'SharePoint file \u00b7 Budget FY26.xlsx', 'CSV file \u00b7 targets.csv'})
-        self.assertEqual(summary['counts'], {'tables': 7, 'columns': 45, 'measures': 14, 'pages': 3, 'visuals': 10})
-        self.assertEqual((summary['coverageIssues'], summary['deletionCandidates'], summary['needsReview']), (1, 14, 2))
+        self.assertEqual(summary['counts'], {'tables': 7, 'columns': 45, 'measures': 15, 'pages': 3, 'visuals': 10})
+        self.assertEqual((summary['coverageIssues'], summary['deletionCandidates'], summary['needsReview']), (1, 15, 2))
         with tempfile.TemporaryDirectory() as d:
             render_html(payload, Path(d) / 'Retail.html')
             row = describe_html((Path(d) / 'Retail.html').read_text(encoding='utf-8'), 'Retail.html')

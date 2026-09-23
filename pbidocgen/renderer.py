@@ -12,6 +12,7 @@ from .source_objects import build_source_objects
 from .primary_sources import build_primary_sources
 from .page_references import attach_report_locations, sync_page_usage, page_feed_rows
 from .source_labels import source_label
+from .quality import build_quality
 
 TEMPLATE = Path(__file__).parent / "template.html"
 
@@ -46,6 +47,7 @@ def build_payload(model: dict | None, report: dict | None,
         "sourceQueries": build_source_queries(model, report),
         "tableSources": build_source_inventory(model, report, linked, columns) if model else [],
         "summary": build_summary(model, report, columns, primary),
+        "quality": build_quality(model),
     }
 
 

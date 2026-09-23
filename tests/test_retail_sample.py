@@ -68,7 +68,7 @@ class RetailSampleTests(unittest.TestCase):
         return next(m for m in analysis["measures"] if m["measure"] == name)
 
     def test_unused_measure_is_a_deletion_candidate(self):
-        self.assertEqual(self.payload["columns"]["measureCounts"], {"Keep": 13, "Deletion candidate": 1})
+        self.assertEqual(self.payload["columns"]["measureCounts"], {"Keep": 13, "Deletion candidate": 2})
         self.assertEqual(self.measure("Revenue YTD")["decision"], "Deletion candidate")
         # Total Cost is only reached through Gross Margin, which the report uses.
         self.assertEqual(self.measure("Total Cost")["decision"], "Keep")
@@ -135,6 +135,31 @@ class SourceLabelTests(unittest.TestCase):
         v = external_value(T(), "Web.Contents", [Value(kind="text", text=url)])
         self.assertEqual(v.objects[0]["sourceType"], "SharePoint file")
         self.assertEqual(v.objects[0]["object"], "Budget FY26.xlsx")
+
+class QualityTests(unittest.TestCase):
+    def test_normalise_ignores_formatting_but_not_strings(self):
+        from pbidocgen.quality import normalise_dax as n
+        self.assertEqual(n("CALCULATE( [Revenue],\n  SAMEPERIODLASTYEAR('Date'[Date])) -- note"),
+                         n("calculate([revenue],sameperiodlastyear(Date[date]))"))
+        self.assertNotEqual(n('IF([x], "Yes")'), n('IF([x], "YES")'))
+        self.assertNotEqual(n("SUM(Sales[Qty])"), n("SUM(Sales[Qty2])"))
+
+    def test_sample_duplicates_and_coverage(self):
+        q = build_retail_payload()["quality"]
+        self.assertEqual([g["measures"] for g in q["duplicateMeasures"]], [["Sales[Revenue]", "Sales[Net Sales]"]])
+        self.assertEqual(q["duplicateMeasures"][0]["formats"], ["#,0", ""])
+        self.assertEqual(q["duplicateMeasures"][0]["match"], "Same DAX apart from formatting, comments or letter case")
+        d = q["documentation"]
+        self.assertEqual((d["measures"], d["measuresDescribed"], d["measuresInFolders"]), (15, 2, 6))
+        self.assertEqual(len(d["measuresWithoutFormat"]), 12)
+        self.assertIn("Sales[Net Sales]", d["measuresWithoutFormat"])
+        self.assertNotIn("Sales[Revenue]", d["measuresWithoutFormat"])
+
+    def test_model_only_has_quality_and_report_only_does_not(self):
+        from pbidocgen.renderer import build_payload
+        self.assertIsNotNone(build_payload(build_retail_model(), None, None, "M")["quality"])
+        self.assertIsNone(build_payload(None, REPORT, None, "R")["quality"])
+
 
 if __name__ == "__main__":
     unittest.main()

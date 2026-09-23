@@ -56,11 +56,18 @@ Not done from C: sharing tokens and components with the hub (`catalog.html`). Mo
 - **C (hub):** `catalog.html` now uses the report's tokens, buttons, badges and type, including an accessible folder picker button instead of a native file input.
 - **Tests:** a summary/whitelist test in `test_catalog.py` (114 total). `browser_catalog.cjs` checks the save bar, the edit row and the hub source index; `browser_review.cjs` checks the mobile menu at 390px. `check_catalog_dom.cjs` (jsdom) passes.
 
+### Step 5 (remaining D items, wide tables)
+
+- **Documentation coverage:** new `pbidocgen/quality.py` adds `payload.quality.documentation` (visible objects only): measures, columns and tables described, measures with a format string (string or expression) and in display folders. Overview shows these as "n of total" tiles, with the measures lacking a format string in an expandable list.
+- **Duplicate measures:** `quality.duplicateMeasures` groups measures whose DAX matches after removing whitespace, comments, letter case outside string literals and quotes around simple table names. It does not evaluate DAX, so equivalent measures written differently are not found. Overview links to a Duplicate measures table in Cleanup review (measures, match type, each measure's format string, DAX).
+- **Which visuals show a measure:** each expanded measure lists the visuals that show it, directly or "via" the measure the visual binds, using the dependency graph; each links to the visual's bindings.
+- **Wide tables:** Columns has 5 columns instead of 9 (report name is in the scope bar; "used in report" and page measures moved into the assessment and usage cells) and source objects 4 instead of 8. Neither scrolls horizontally at 1280px. CSV exports are unchanged.
+- **Sample:** adds `Net Sales`, a reformatted copy of Revenue (unused), and descriptions/format strings on two measures. Measure count 15, measure deletion candidates 2.
+
 ### Still open from the review
 
-- D: documentation coverage on Overview (descriptions, format strings), duplicate-measure detection, and "which visuals show this measure" on Measures (the Page layout and Impact inspector show it).
-- The two source parsers (`model_parser` patterns and the M tracer) still exist side by side; only their vocabulary is shared.
-- Wide tables (Columns, source objects) still scroll horizontally on laptops.
+- The two source parsers (`model_parser` patterns and the M tracer) still exist side by side; only their vocabulary is shared. Merging them changes what every partition reports, so it needs real PBIX extracts to check against, not only the synthetic samples.
+- The hub summary does not yet carry duplicate or documentation counts.
 
 ## Environment notes
 

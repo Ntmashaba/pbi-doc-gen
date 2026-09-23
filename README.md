@@ -50,6 +50,12 @@ show pages used, format string and a one-line DAX preview without expanding.
 authentication inline, Edit for the rest) with a save bar that counts unsaved
 changes. On narrow screens the sections sit behind a menu button.
 
+**Overview** shows documentation coverage (measures, columns and tables described,
+measures with a format string or display folder) and any duplicate measures: the
+same DAX saved under different names, compared after removing whitespace, comments
+and letter case. **Cleanup review** lists the duplicates, and each measure lists
+the visuals that show it, directly or through measures built on it.
+
 The **home page** (`--catalog`) indexes every report's sources: a "Sources across
 reports" table shows which reports use each server, database or file, and each
 report card shows its sources as tags (select one to filter), its mode, analysis

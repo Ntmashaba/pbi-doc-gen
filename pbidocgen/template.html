@@ -44,9 +44,9 @@ nav{background:var(--panel);border-right:1px solid var(--line);padding:1.1rem .8
 main{padding:1.4rem 2rem 4rem;max-width:1240px}
 main{min-width:0}
 .column-scroll{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:8px}
-.column-scroll table.t{min-width:1000px;border:0;overflow:visible}
+.column-scroll table.t{border:0;overflow:visible}
 .column-scroll th{position:sticky;top:0;z-index:1}
-.column-scroll td{min-width:110px;max-width:300px;overflow-wrap:anywhere}
+.column-scroll td{max-width:360px;overflow-wrap:anywhere}
 .column-scroll details{min-width:200px;font-size:.8rem}
 .column-scroll summary{padding:.25rem .4rem;font-weight:400}
 /* mode coupler (signature) */
@@ -269,9 +269,10 @@ let columnSort = {key:"column", direction:1};
 let visibleColumns = [];
 function rColumns(){
   const a = DATA.columns;
-  const headings = [["decision","Deletion assessment"],["usedInReport","Used in report"],
-    ["table","Table"],["column","Column"],["report","Report"],["page","Report page"],["pageUsage","Page usage"],
-    ["pageMeasures","Measures on this page"],["reason","Evidence & source"]];
+  // Five columns so the table fits a laptop; report name is in the scope bar and
+  // usage/measure detail sits in the assessment and evidence cells.
+  const headings = [["decision","Assessment"],["column","Table / column"],["page","Report page"],
+    ["pageUsage","Page usage"],["reason","Evidence & source"]];
   return `<h1>Which columns are used?</h1>
     <p class="sub">One row per report, page and column. Usage is specific to that page; deletion assessment covers all detected dependencies.</p>
     <div class="grid c4" style="margin-top:1rem">${[["Columns",a.columnCount],["Used in report",a.counts["Used in report"]||0],
@@ -307,17 +308,17 @@ function filterColumns(){
     th.dataset.columnSort===columnSort.key?(columnSort.direction===1?"ascending":"descending"):"none"));
   const list = values=>values.length?values.map(esc).join("<br>"):"—";
   document.getElementById("column-rows").innerHTML = visibleColumns.map(r=>`<tr>
-    <td><span class="badge ${r.decision==='Keep'?'b-direct':r.decision==='Review'?'b-warn':'b-info'}">${esc(r.decision)}</span></td>
-    <td>${esc(r.usedInReport)}</td><td>${esc(r.table)}</td><td><b>${esc(r.column)}</b></td>
-    <td>${esc(r.report)}</td><td>${esc(r.page)||esc(r.pageScope)}${r.pageId?`<div class="mut">${esc(r.pageId)}</div>`:''}</td><td>${esc(r.pageUsage)}</td>
-    <td>${list(r.pageMeasures)}</td><td><details><summary>${esc(r.reason)}</summary><div class="body">
+    <td><span class="badge ${r.decision==='Keep'?'b-direct':r.decision==='Review'?'b-warn':'b-info'}">${esc(r.decision)}</span><div class="mut">Used in report: ${esc(r.usedInReport)}</div></td>
+    <td><div class="mut">${esc(r.table)}</div><b>${esc(r.column)}</b></td>
+    <td>${esc(r.page)||esc(r.pageScope)}${r.pageId?`<div class="mut">${esc(r.pageId)}</div>`:''}</td>
+    <td>${esc(r.pageUsage)}${r.pageMeasures.length?`<div class="mut">${list(r.pageMeasures)}</div>`:''}</td><td><details><summary>${esc(r.reason)}</summary><div class="body">
     <b>Page evidence</b><p>${list(r.evidence)}</p><b>All dependent measures</b><p>${list(r.usedByMeasures)}</p>
     <b>Dependent calculations</b><p>${list(r.usedByCalculations)}</p><b>Model dependencies</b><p>${list(r.modelDependencies)}</p>
     <b>Bookmarks</b><p>${list(r.bookmarkUsage)}</p><b>Partition sources</b><p>${list(r.source)}</p>
     <b>Source column (model input)</b><p>${esc(r.sourceColumn)||'Unknown'}</p>
     ${r.expression?`<b>Column expression</b><pre class="code">${esc(r.expression)}</pre>`:''}
     <p class="mut">${esc(r.sourceNote)}</p>${r.reviewNotes.length?`<b>Review notes</b><p>${list(r.reviewNotes)}</p>`:''}
-    </div></details></td></tr>`).join("") || '<tr><td colspan="9">No columns match these filters.</td></tr>';
+    </div></details></td></tr>`).join("") || '<tr><td colspan="5">No columns match these filters.</td></tr>';
 }
 function sortColumns(key){
   columnSort = {key,direction:columnSort.key===key?-columnSort.direction:1};
@@ -389,7 +390,19 @@ function rOverview(){
     }).join("")}
     ${unused.length?`<div class="mut" style="margin-top:.5rem">Tables with no report references: ${unused.map(u=>tblLink(u.table)).join(", ")} — details in <button class="xl" onclick="switchTab('usage')">Usage</button>.</div>`:""}
   </div>`:""}
-  ${warnCount?`<h2>Quality</h2><div class="card">${warnCount} warning${warnCount>1?"s":""} flagged — see <button class="xl" onclick="switchTab('warnings')">Warnings</button>.</div>`:""}`;
+  ${rQualityOverview(warnCount)}`;
+}
+/* Documentation coverage and duplicates (review item D). Static facts only. */
+function rQualityOverview(warnCount){
+  const q = DATA.quality, d = q?.documentation, dup = q?.duplicateMeasures||[];
+  const part = (n,total,label) => `<div class="card stat"><div class="big">${num(n)}<span class="of"> of ${num(total)}</span></div><div class="lbl">${label}</div></div>`;
+  const noFormat = d?.measuresWithoutFormat||[];
+  return `<h2>Documentation and quality</h2>
+  ${d?`<div class="grid c4">${part(d.measuresDescribed,d.measures,"measures described")}${part(d.measures-noFormat.length,d.measures,"measures with a format string")}${part(d.measuresInFolders,d.measures,"measures in display folders")}${part(d.columnsDescribed,d.columns,"columns described")}${part(d.tablesDescribed,d.tables,"tables described")}</div>
+  ${noFormat.length?`<details><summary>${noFormat.length} ${noFormat.length===1?"measure has":"measures have"} no format string</summary><div class="body"><div class="pill-list">${noFormat.map(l=>`<span class="ref">${esc(l)}</span>`).join("")}</div></div></details>`:""}
+  <p class="mut">${esc(d.scope)} Refresh health, performance and real usage are not available from a static extract.</p>`:""}
+  <div class="card">${dup.length?`<b>${dup.length} ${dup.length===1?"set":"sets"} of duplicate measures</b> (the same DAX saved under different names): ${dup.map(g=>g.measures.map(esc).join(" = ")).join("; ")}. See <button class="xl" onclick="switchTab('cleanup')">Cleanup review</button>.<br>`:has.model?"No duplicate measures detected.<br>":""}
+  ${warnCount?`${warnCount} warning${warnCount>1?"s":""} flagged — see <button class="xl" onclick="switchTab('warnings')">Warnings</button>.`:"No warnings flagged."}</div>`;
 }
 
 /* ============================================================ lineage */
@@ -644,7 +657,7 @@ function rMeasures(){
           <tr><td class="mut">Depends on measures</td><td>${m.dependsOnMeasures.map(meaLink).join(", ")||"—"}</td></tr>
           <tr><td class="mut">Depends on columns</td><td>${m.dependsOnColumns.map(c=>`<span class="ref">${esc(c)}</span>`).join(" ")||"—"}</td></tr>
           <tr><td class="mut">All tables touched</td><td>${m.allTables.map(tblLink).join(", ")||"—"}</td></tr>
-          ${m.pageUsage?.length?`<tr><td class="mut">Usage by report page</td><td class="mut">${m.pageUsage.filter(inPageScope).map(r=>`${esc(pageLabel(r))}: ${esc(r.usage)}`).join("<br>")}</td></tr>`:""}
+          ${has.report?`<tr><td class="mut">Shown in visuals</td><td>${measureVisuals(m)}</td></tr>`:""}
           ${m.formatString?`<tr><td class="mut">Format</td><td><span class="ref">${esc(m.formatString)}</span></td></tr>`:""}
         </tbody></table>
       </div>
@@ -658,6 +671,19 @@ function rMeasures(){
   return `${coupler()}<h1>Measures</h1>
   <input id="measure-search" class="search" placeholder="Search names, folders or DAX…" aria-label="Search measures" oninput="fMea(this.value)">
   <div id="mea-list">${grouped}</div>`;
+}
+// Visuals that show a measure directly or through measures built on it (D).
+function measureVisuals(m){
+  const id = nodeId('m', m.table, m.name);
+  const seen = new Map();
+  for(const c of impactConsumers(id).filter(c=>c.visualId)){
+    const page = R.pages.find(p=>p.id===c.pageId), v = page?.visuals.find(v=>v.id===c.visualId);
+    const key = c.pageId+'|'+c.visualId, via = c.path.length>1 ? graphNodes.get(c.path[c.path.length-1])?.name : '';
+    if(!seen.has(key)) seen.set(key,{page,v,c,via:new Set()});
+    if(via) seen.get(key).via.add(via); else seen.get(key).direct = true;
+  }
+  const items = [...seen.values()].map(({page,v,c,via,direct})=>`<button class="xl" onclick="${action('inspectVisual',c.pageId,c.visualId)}">${esc(page?.name||c.pageId)} · ${esc(v?.title||v?.type||c.visualId)}</button>${direct?'':` <span class="mut">via ${[...via].map(esc).join(', ')}</span>`}`);
+  return items.join('<br>') || '<span class="mut">Not shown in any visual on the selected pages</span>';
 }
 function fMea(q){
   q=q.toLowerCase();

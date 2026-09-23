@@ -39,6 +39,8 @@ run("switchTab('columns')");assert.equal(node('column-search').value,'Amount');a
 assert.equal(run('visibleColumns[0].pageId'),'p2');
 run("switchTab('pages')");assert.ok(!node('main').innerHTML.includes('id="pg-70_31"'));assert.ok(node('main').innerHTML.includes('id="pg-70_32"'));
 run("switchTab('matrix');toggleMatrixTable('Sales')");assert.match(node('main').innerHTML,/matrix-column/);assert.ok(!run('rMatrix()').includes('<div class="mut">p1</div>'));assert.equal(run("matrixKinds({kinds:['Possible relationship dependency']}).kinds.length"),0);run('matrixRelOnly=true');assert.equal(run("matrixKinds({kinds:['Possible relationship dependency']}).kinds.length"),1);assert.match(run('rMatrix()'),/id="matrix-rel" checked/);run('matrixRelOnly=false');
+assert.match(run("measureVisuals(M.measures.find(m=>m.name==='Total'))"),/inspectVisual/);assert.doesNotMatch(run("measureVisuals(M.measures.find(m=>m.name==='Total'))"),/via/);
+assert.match(run("measureVisuals(M.measures.find(m=>m.name==='Base'))"),/via Total/);
 run("inspectCell('Sales','Amount','p2')");assert.match(node('inspector').innerHTML,/v1/);
 const amount='["c","Sales","Amount"]';
 same(run(`impactConsumers(${JSON.stringify(amount)}).map(c=>c.pageId)`),['p2']);

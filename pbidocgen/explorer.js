@@ -232,7 +232,14 @@ function rCleanup(){
     <table class="t"><thead><tr><th>Column</th><th>Assessment</th><th>Why / evidence</th><th>Pages</th></tr></thead><tbody>${rows.map(r=>{
       const pages=DATA.columns.rows.filter(x=>x.table===r.table&&x.column===r.column&&x.pageId);
       return `<tr><th><button class="xl" onclick="${action('inspectNode',nodeId('c',r.table,r.column),'*')}">${esc(r.table)}[${esc(r.column)}]</button></th><td>${esc(r.decision)}</td><td>${esc(r.reason)}<details><summary>Dependencies and review notes</summary><p>${listText(r.modelDependencies)}</p><p>${listText(r.reviewNotes)}</p></details></td><td>${pages.map(p=>esc(pageLabel(p))).join('<br>')||esc(r.pageScope)}</td></tr>`;
-    }).join('')||'<tr><td colspan="4">No columns have this assessment.</td></tr>'}</tbody></table>${rCleanupMeasures()}`;
+    }).join('')||'<tr><td colspan="4">No columns have this assessment.</td></tr>'}</tbody></table>${rCleanupMeasures()}${rDuplicateMeasures()}`;
+}
+function rDuplicateMeasures(){
+  const dup=DATA.quality?.duplicateMeasures||[];
+  if(!dup.length) return '';
+  const link=l=>{const m=/^(.*)\[(.*)\]$/.exec(l);return m?`<button class="xl" onclick="${action('inspectNode',nodeId('m',m[1],m[2]),'*')}">${esc(l)}</button>`:esc(l);};
+  return `<h2>Duplicate measures</h2><p class="sub">The same DAX saved under different names, compared after removing whitespace, comments and letter case. Keep one and repoint visuals and dependent measures before removing the others; check which one other reports use.</p>
+    <table class="t"><thead><tr><th>Measures</th><th>Match</th><th>Format strings</th><th>DAX</th></tr></thead><tbody>${dup.map(g=>`<tr><td>${g.measures.map(link).join('<br>')}</td><td>${esc(g.match)}</td><td>${g.formats.map(f=>f?`<span class="ref">${esc(f)}</span>`:'<span class="mut">none</span>').join('<br>')}</td><td><span class="path">${esc(g.expression)}</span></td></tr>`).join('')}</tbody></table>`;
 }
 function cleanupMeasureRows(){return (DATA.columns.measures||[]).filter(r=>!cleanupDecision||r.decision===cleanupDecision);}
 function rCleanupTables(){
@@ -373,21 +380,20 @@ function rSourceObjects(){
  <button class="chip" onclick="downloadSourceObjectsCsv(false)">Export source objects CSV (no code)</button>
  <button class="chip" onclick="downloadSourceObjectsCsv()">Export source objects CSV (with code)</button></div>
  <p id="source-object-count" class="mut" aria-live="polite"></p>
- <div class="column-scroll"><table class="t"><thead><tr><th>Report / page</th><th>Model table / query</th><th>Source type</th><th>Server / connection</th><th>Database / service</th><th>Schema</th><th>Source object</th><th>Status / original code</th></tr></thead><tbody id="source-object-rows"></tbody></table></div>`;
+ <div class="column-scroll"><table class="t"><thead><tr><th>Report page</th><th>Model table / query</th><th>Source object</th><th>Status / original code</th></tr></thead><tbody id="source-object-rows"></tbody></table></div>`;
 }
 function filterSourceObjects(){
  visibleSourceObjects=sourceObjectRows(document.getElementById('source-object-search').value,document.getElementById('source-object-status').value);
  document.getElementById('source-object-count').textContent=`${visibleSourceObjects.length} source-object/page rows`;
  document.getElementById('source-object-rows').innerHTML=visibleSourceObjects.map(r=>`<tr>
  <td>${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)} · ${esc(r.pageUsage)}</div></td>
- <td>${esc(r.table)}<div class="mut">${esc(r.queryName)}</div></td><td>${esc(r.sourceType)}</td>
- <td>${esc(r.server)||'Unresolved / not supplied'}</td><td>${esc(r.database)||'Unresolved / not supplied'}</td>
- <td>${esc(r.schema)||'—'}</td><td><b>${esc(r.object)||'No object resolved'}</b></td>
+ <td>${esc(r.table)}<div class="mut">${esc(r.queryName)}</div></td>
+ <td><b>${esc(r.object)||'No object resolved'}</b><div class="mut">${esc(r.sourceType)} · ${esc(r.server)||'server unresolved'}${r.database?' / '+esc(r.database):''}${r.schema?' / '+esc(r.schema):''}</div></td>
  <td><span class="badge ${r.status==='Resolved'?'b-direct':r.status==='Not applicable'?'b-other':'b-warn'}">${esc(r.status)}</span>
  <details><summary>View source code</summary><div class="body"><b>Extraction evidence</b><p>${esc(r.evidence)}</p><p>${listText(r.notes)}</p>
  <b>Original M code</b><pre class="code">${esc(r.originalM)||'No M expression for this partition.'}</pre>
  <b>Extracted SQL</b><pre class="code">${esc(r.sql)||'No resolved native SQL text.'}</pre>
- ${r.referencedM?`<b>Referenced M queries / parameters</b><pre class="code">${esc(r.referencedM)}</pre>`:''}</div></details></td></tr>`).join('')||'<tr><td colspan="8">No source objects match this selection.</td></tr>';
+ ${r.referencedM?`<b>Referenced M queries / parameters</b><pre class="code">${esc(r.referencedM)}</pre>`:''}</div></details></td></tr>`).join('')||'<tr><td colspan="4">No source objects match this selection.</td></tr>';
 }
 function downloadSourceObjectsCsv(includeCode=true){
  const fields=includeCode?sourceObjectCsvFields:sourceObjectCsvFields.filter(([key])=>!['originalM','sql','referencedM'].includes(key));

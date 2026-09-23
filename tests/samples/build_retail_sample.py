@@ -49,11 +49,15 @@ TABLES = [
                                                    "ETLBatchId")]
      + [col("Margin", type="calculated", expression="Sales[NetAmount]-Sales[Cost]")],
      "measures": [
-         {"name": "Revenue", "expression": "SUM(Sales[NetAmount])", "formatString": "#,0"},
+         {"name": "Revenue", "expression": "SUM(Sales[NetAmount])", "formatString": "#,0",
+          "description": "Net sales after discounts, excluding VAT."},
+         # Deliberate duplicate of Revenue (formatting and a comment differ), unused.
+         {"name": "Net Sales", "expression": "sum( Sales[NetAmount] )  // copied from Revenue"},
          {"name": "Total Cost", "displayFolder": "Profitability", "expression": "SUM(Sales[Cost])"},
          {"name": "Gross Margin", "displayFolder": "Profitability", "expression": "[Revenue]-[Total Cost]"},
          {"name": "Gross Margin %", "displayFolder": "Profitability", "expression": "DIVIDE([Gross Margin],[Revenue])", "formatString": "0.0%"},
-         {"name": "Units", "expression": "SUM(Sales[Quantity])"},
+         {"name": "Units", "expression": "SUM(Sales[Quantity])", "formatString": "#,0",
+          "description": "Units sold."},
          {"name": "Revenue LY", "displayFolder": "Time intelligence", "expression": "CALCULATE([Revenue], SAMEPERIODLASTYEAR('Date'[Date]))"},
          {"name": "Revenue YoY %", "displayFolder": "Time intelligence", "expression": "DIVIDE([Revenue]-[Revenue LY],[Revenue LY])"},
          {"name": "Revenue YTD", "displayFolder": "Time intelligence", "expression": "TOTALYTD([Revenue],'Date'[Date])"},
