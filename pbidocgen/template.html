@@ -141,6 +141,26 @@ main{padding:28px 36px 48px;max-width:1480px}h1{font-size:28px;letter-spacing:-.
 @media(max-width:860px){.layout{grid-template-columns:1fr}nav{padding:12px 18px}.library-back{grid-column:1/-1;padding:0 0 6px}nav .brand{display:none}nav .doc-title{font-size:15px;margin:0}.nav-toggle{grid-row:2}main{padding:20px}.breadcrumb{margin-bottom:16px}}
 @media print{.breadcrumb{display:none}.layout{grid-template-columns:1fr}}
 
+/* Contrast pass: the earlier palette read as washed out (hairline borders, grey-on-grey
+   text, invisible shadows, 11-12px labels). Stronger lines, darker secondary text, larger labels. */
+:root{--bg:#E8ECF1;--ink:#111A24;--ink2:#34404D;--ink3:#46525F;--line:#B9C4D0;--line2:#D3DBE3;--panel2:#F1F4F7;
+  --directBg:#D3EEDF;--viamBg:#D2ECF2;--possBg:#F8E3C6;--noneBg:#F8D9D5;--factBg:#DADFF5;--dimBg:#D2ECE8;--dateBg:#E6DAFA;--otherBg:#E1E6EC}
+body{font-size:15px}
+.card,table.t,details,.column-scroll{border-color:var(--line)}
+.card{box-shadow:0 1px 3px #1724341f}
+table.t{font-size:.875rem}
+table.t thead th{font-size:.8rem;color:var(--ink);background:#E3E8EE;border-bottom:1px solid var(--line)}
+table.t td,table.t tbody th{border-bottom-color:var(--line2)}
+.badge{font-size:.78rem}
+.mut,.eyebrow,.stat .lbl,.coupler .tag,.legend,.breadcrumb{color:var(--ink2)}
+.mut{font-size:.84rem}
+.chip{color:var(--ink);border-color:var(--line)}
+.ref{border-color:var(--line);color:var(--ink)}
+.coupler .half,.coupler .joint{border-color:var(--line)}
+.coupler .half.off{color:var(--ink2)}
+.nav-btn{color:#DCE4EE}nav .brand{color:#C9D5E3}
+.column-scroll td,table.t td{overflow-wrap:break-word;word-break:normal}
+.erd-viewport{background-color:#F4F7FA;background-image:radial-gradient(#B9C6D4 .9px,transparent .9px)}
 </style>
 </head>
 <body>
