@@ -13,6 +13,7 @@ import zipfile
 from .catalog import build_catalog, read_metadata, validate_metadata, describe_html
 from .extracted_report import parse_extracted_report
 from .model_parser import parse_model
+from .pbitools_folder import assemble, is_folder_model
 from .report_parser import parse_report
 from .renderer import build_payload, render_html
 from .linker import link
@@ -55,8 +56,15 @@ def load_extracted(folder, source, has_embedded_model):
             model_path = candidates[0]
     if has_embedded_model and model_path is None:
         raise ValueError('PBIX contains an embedded model but extraction produced no readable model definition')
+    raw_database = model_path is not None and model_path.name == 'database.json'
+    if model_path is not None and model_path.name == 'database.json':
+        model_dir = model_path.parent
+        if is_folder_model(model_dir):
+            assembled = folder / 'assembled-model.bim'
+            assembled.write_text(json.dumps(assemble(model_dir)), encoding='utf-8')
+            model_path = assembled
     model = parse_model(model_path) if model_path else None
-    if model and model_path.name == 'database.json' and model.get('name') in (None, '', 'database'):
+    if model and raw_database and model.get('name') in (None, '', 'database'):
         # pbi-tools' raw database.json often carries no model name.
         model['name'] = source.stem
     report_root = folder / 'Report'

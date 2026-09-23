@@ -59,6 +59,10 @@ def _collect_aliases(node, aliases: dict):
     if isinstance(node, dict):
         if "Name" in node and "Entity" in node and isinstance(node.get("Entity"), str):
             aliases[node["Name"]] = node["Entity"]
+        elif (isinstance(node.get("Name"), str) and isinstance(node.get("Expression"), dict)
+              and "Subquery" in node["Expression"]):
+            # A subquery alias (q1): columns read through it are query outputs.
+            aliases.setdefault(node["Name"], _SUBQUERY)
         for v in node.values():
             _collect_aliases(v, aliases)
     elif isinstance(node, list):
@@ -140,6 +144,11 @@ def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
                     continue
                 prop = inner.get("Property")
                 expression = inner.get("Expression") or {}
+                if isinstance(expression, dict) and "Subquery" in expression:
+                    # A column of an inline subquery's output, not a model field.
+                    # The subquery's own inputs are real references.
+                    _collect_field_refs(expression, aliases, out, context)
+                    continue
                 if isinstance(expression, dict) and "TransformTableRef" in expression:
                     # Output of an analytics transform (forecast, anomaly
                     # detection): a computed column, not a model field. The

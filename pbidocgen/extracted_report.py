@@ -8,7 +8,7 @@ is best-effort and explicitly prevents automatic deletion recommendations.
 """
 import json
 from pathlib import Path
-from .report_parser import _collect_aliases, _collect_field_refs, _collect_filters
+from .report_parser import _SUBQUERY, _collect_aliases, _collect_field_refs, _collect_filters
 from .page_references import attach_report_locations
 
 
@@ -43,8 +43,10 @@ def decode_embedded(node):
     return node
 
 
-def refs(blob, context):
-    aliases, fields = {}, []
+def refs(blob, context, subqueries=None):
+    # Subquery aliases (q, q1...) declared in the visual's query are read from
+    # its config/dataTransforms too; table aliases stay per blob.
+    aliases, fields = dict(subqueries or {}), []
     _collect_aliases(blob, aliases)
     _collect_field_refs(blob, aliases, fields, context=context)
     unique = {json.dumps(f, sort_keys=True): f for f in fields}
@@ -91,10 +93,12 @@ def _visual(visual, label, fallback_id):
     vf = filters(visual, 'visual', f'{label} / {title or vtype}')
     # Alias maps stay within each query/config blob instead of leaking
     # from one visual/query into another.
-    fields = []
+    fields, subqueries = [], {}
+    _collect_aliases(visual, subqueries)
+    subqueries = {k: v for k, v in subqueries.items() if v == _SUBQUERY}
     for key, blob in visual.items():
         if isinstance(blob, (dict, list)):
-            fields.extend(refs(blob, 'visual ' + key))
+            fields.extend(refs(blob, 'visual ' + key, subqueries))
     if vtype == 'qnaVisual':
         # Q&A answers are re-derived from the question at runtime.
         for f in fields:

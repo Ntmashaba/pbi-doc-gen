@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import re
 from .dax_lexer import mask_dax, REFERENCE
+from .legacy_mashup import is_mashup_source, location, members, section_text
 from .input_validation import validate_model
 from pathlib import Path
 from .source_inventory import enrich_source
@@ -207,11 +208,39 @@ def load_model_document(model_path: str | Path) -> tuple[dict, str, Path]:
     )
 
 
+def inline_legacy_mashups(model: dict) -> None:
+    """Replace legacy placeholder partitions (SELECT * FROM [Age] against a
+    Microsoft.PowerBI.OleDb data source) with the Power Query member they stand
+    for, and expose the section's other members as shared expressions so
+    references between queries can be traced."""
+    sources = {d.get("name"): d for d in model.get("dataSources") or [] if is_mashup_source(d)}
+    if not sources:
+        return
+    section = {}
+    for ds in sources.values():
+        for name, expression in members(section_text(ds)).items():
+            section.setdefault(name, expression)
+    used = set()
+    for tbl in model.get("tables") or []:
+        for part in tbl.get("partitions") or []:
+            src = part.get("source") or {}
+            ds = sources.get(src.get("dataSource"))
+            member = location(ds) if ds else None
+            if (src.get("type") or ("query" if "query" in src else "")) == "query" and member in section:
+                part["source"] = dict(src, type="m", expression=section[member], legacyQuery=src.get("query"))
+                used.add(member)
+    existing = {e.get("name") for e in model.get("expressions") or []}
+    extra = [{"name": n, "kind": "m", "expression": e} for n, e in section.items() if n not in used | existing]
+    if extra:
+        model["expressions"] = list(model.get("expressions") or []) + extra
+
+
 def parse_model(model_path: str | Path) -> dict:
     bim_path = Path(model_path)
     doc, source_format, bim_path = load_model_document(bim_path)
     validate_model(doc)
     model = doc.get("model", doc)
+    inline_legacy_mashups(model)
 
     tables_out: list[dict] = []
     relationships_out: list[dict] = []

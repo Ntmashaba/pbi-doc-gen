@@ -190,6 +190,27 @@ LIBRARY = {'Table', 'List', 'Text', 'Number', 'Date', 'DateTime', 'DateTimeZone'
            'PowerBI', 'PowerPlatform', 'Json', 'Parquet', 'Compression', 'BinaryEncoding',
            'TextEncoding', 'Guid', 'Password', 'RelativePosition', 'Resource', 'SapBusinessWarehouse'}
 INTERNAL_SOURCES = {'Entered data', 'Generated in Power Query'}
+# Library namespaces that can read data. Their connectors and readers are
+# handled explicitly; anything else in these namespaces stays a coverage gap.
+DATA_NAMESPACES = {'Web', 'File', 'Folder', 'SharePoint', 'OData', 'AzureStorage', 'Sql', 'Oracle', 'Teradata',
+                   'Odbc', 'PowerBI', 'PowerPlatform', 'Access', 'Excel', 'Csv', 'Json', 'Xml', 'Pdf', 'Html',
+                   'Parquet', 'Cube', 'SapBusinessWarehouse', 'Embedded', 'Graph', 'Resource', 'Variable', 'Action',
+                   'Expression'}
+
+
+def pure_library(name: str) -> bool:
+    """Text.PadStart, Splitter.SplitTextByDelimiter, QuoteStyle.Csv: computed from
+    their arguments (or constants); they read no data."""
+    namespace = name.split('.', 1)[0] if '.' in name else ''
+    return namespace in LIBRARY and namespace not in DATA_NAMESPACES
+
+
+# Library functions that return metadata or scalars computed from their inputs
+# (column lists, cleaned names). They read no new data; their inputs are traced.
+PURE = {'Table.ColumnsOfType', 'Table.ColumnNames', 'Table.Schema', 'Table.RowCount', 'Table.IsEmpty',
+        'Text.Clean', 'Text.Trim', 'Text.Upper', 'Text.Lower', 'Text.Proper', 'Text.From', 'Number.From',
+        'Date.From', 'DateTime.From', 'List.Distinct', 'List.Select', 'List.Transform', 'List.Combine',
+        'List.RemoveNulls', 'List.Contains', 'List.Max', 'List.Min', 'Record.Field', 'Table.Column'}
 
 
 class Tracer:
@@ -277,11 +298,28 @@ class Tracer:
             else:
                 result.issues.append('Dynamic M concatenation cannot be resolved')
             return result
+        if len(ts) > 1 and all(t.kind not in ('id', 'string') and t.value not in '([{' for t in ts):
+            # Literals and operators only (-1, 2 * 3): a constant.
+            return Value(text=''.join(t.value for t in ts), kind='literal')
+        if ts[0].kind == 'id' and ts[0].value == 'type':
+            # A type expression (type table, type text): no data.
+            return Value(text=' '.join(t.value for t in ts), kind='literal')
+        if ts[0].kind == 'id' and ts[0].value == 'each':
+            # A row function (each ...) computes values per row; any query it
+            # reads is kept as a possible source. Handled before calls, since
+            # "each (...)" would otherwise look like a call to "each".
+            return union([c for c in (resolve(t.value) for t in ts[1:] if t.kind == 'id'
+                                      and t.value not in {'each', 'if', 'then', 'else', 'true', 'false', 'null', 'and', 'or', 'not'})
+                          if c.connections or c.objects])
         if len(ts) == 1:
             if ts[0].kind == 'string':
                 return Value(text=ts[0].value, kind='text')
             if ts[0].kind == 'id':
                 if ts[0].value in {'true', 'false', 'null'}:
+                    return Value(text=ts[0].value, kind='literal')
+                if ts[0].value == '_' or ((ts[0].value in PURE or ts[0].value in TRANSFORMS
+                                           or pure_library(ts[0].value)) and ts[0].value not in self.definitions):
+                    # A library function passed as a value (Text.Clean).
                     return Value(text=ts[0].value, kind='literal')
                 return resolve(ts[0].value)
             return Value(text=ts[0].value, kind='literal')
@@ -382,6 +420,8 @@ class Tracer:
                 result = union(args)
                 result.effects.append('Combined inputs; source-column contribution not proven')
                 return result
+            if fn in PURE or (pure_library(fn) and fn not in self.definitions):
+                return union(args)
             function = resolve(fn)
             if function.references or function.connections or function.objects:
                 args.append(function)

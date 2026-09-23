@@ -32,6 +32,9 @@ def link(model: dict, report: dict) -> dict:
     table_names = {t["name"] for t in model["tables"]}
     columns = {(t["name"], c["name"]) for t in model["tables"] for c in t["columns"]}
     measures = {m["name"]: m for m in model["measures"]}
+    # (table, hierarchy, level name) -> column: a level's name need not match its column.
+    levels = {(t["name"], h["name"], lv.get("name")): lv.get("column")
+              for t in model["tables"] for h in t.get("hierarchies", []) for lv in h.get("levelDetails", [])}
     warnings: list[dict] = []
 
     # ---- resolve every manifest entry ----------------------------------
@@ -43,6 +46,8 @@ def link(model: dict, report: dict) -> dict:
     for entry in report["manifest"]:
         table, field = entry["table"], entry["field"]
         kind = entry.get("kind")
+        if kind == "hierarchyLevel" and levels.get((table, entry.get("hierarchy"), field)):
+            field = levels[(table, entry["hierarchy"], field)]
         resolution, home = "unresolved", None
         # The report tells us whether it bound a column or a measure; trust it.
         # Only fall back to name lookup when it didn't (or the binding is stale),
