@@ -14,6 +14,19 @@ from __future__ import annotations
 from .page_references import attach_report_locations
 
 
+def _used_on(entry: dict, limit: int = 3) -> str:
+    """" Used on: Page — Visual: x; ..." so a broken binding says where to fix it."""
+    places = []
+    for loc in entry.get("locations") or []:
+        text = f"{loc.get('page') or 'No specific page'} — {loc.get('description') or loc.get('scope') or 'report'}"
+        if text not in places:
+            places.append(text)
+    if not places:
+        return ""
+    more = f" (+{len(places) - limit} more)" if len(places) > limit else ""
+    return " Used on: " + "; ".join(places[:limit]) + more + "."
+
+
 def link(model: dict, report: dict) -> dict:
     attach_report_locations(report)
     table_names = {t["name"] for t in model["tables"]}
@@ -57,7 +70,7 @@ def link(model: dict, report: dict) -> dict:
             used_tables_direct.add(table)
             warnings.append({
                 "severity": "warning", "category": "Broken binding",
-                "message": f"Report references {table}[{field}] but the model has no such column or measure.",
+                "message": f"Report references {table}[{field}] but the model has no such column or measure." + _used_on(entry),
             })
         else:
             ref = f"{table}[{field}]" if table else f"[{field}]"
@@ -65,7 +78,7 @@ def link(model: dict, report: dict) -> dict:
                       if table else "no measure with that name exists in the model")
             warnings.append({
                 "severity": "warning", "category": "Broken binding",
-                "message": f"Report references {ref} but {reason}.",
+                "message": f"Report references {ref} but {reason}." + _used_on(entry),
             })
         resolved_manifest.append({**entry, "resolution": resolution, "homeTable": home})
 

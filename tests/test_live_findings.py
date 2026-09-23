@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pbidocgen.column_usage import build_column_usage
 from pbidocgen.extracted_report import parse_extracted_report, parse_legacy_layout
+from pbidocgen.linker import _used_on
 from pbidocgen.input_validation import validate_model, validate_report
 from pbidocgen.pbix_batch import extract_pbir, load_extracted
 from pbidocgen.report_parser import _collect_field_refs, parse_report
@@ -64,6 +65,14 @@ class ReportLayoutTests(unittest.TestCase):
         _collect_field_refs(node, {"o": "Owners"}, refs)
         self.assertEqual({(r["table"], r["field"]) for r in refs},
                          {("Opportunities", "Value"), ("Owners", "Owner")})
+
+    def test_broken_binding_says_where_it_is_used(self):
+        entry = {"locations": [{"page": "Pipeline", "description": "Page filter"}] * 2
+                 + [{"page": None, "description": "Bookmark: A"}, {"page": "X", "description": "Visual: a"},
+                    {"page": "Y", "description": "Visual: b"}]}
+        self.assertEqual(_used_on(entry), " Used on: Pipeline — Page filter; No specific page — Bookmark: A;"
+                                          " X — Visual: a (+1 more).")
+        self.assertEqual(_used_on({}), "")
 
     def test_auto_date_hierarchy_uses_its_date_column(self):
         out = []
