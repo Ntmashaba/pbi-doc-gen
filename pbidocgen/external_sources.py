@@ -5,6 +5,7 @@ See CONNECTOR-COVERAGE.md for supported forms and limits.
 """
 import copy
 import re
+from urllib.parse import unquote
 from urllib.parse import urlsplit, urlunsplit
 
 from .source_labels import refine_source_type
@@ -75,6 +76,8 @@ def external_value(tracer, fn, args):
     if mode in {'files', 'hierarchy', 'lists'}:
         notes.append('Collection location identified; individual item selection unresolved')
     obj = re.split(r'[/\\]', location.rstrip('/\\'))[-1] if mode == 'file' and location else ''
+    if obj and location.lower().startswith(('http://', 'https://')):
+        obj = unquote(obj)  # SLA%20Targets.xlsx -> SLA Targets.xlsx
     if mode == 'endpoint':
         obj = location
     conn = dict(sourceType=kind, server=location, database='', schema='', location=location,

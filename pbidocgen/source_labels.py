@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote, urlsplit
 
+_NAMED_FILES = {".json": "JSON file", ".xml": "XML file", ".parquet": "Parquet file", ".pdf": "PDF file",
+                ".accdb": "Access database", ".mdb": "Access database"}
 _EXCEL = (".xlsx", ".xlsm", ".xlsb", ".xls")
 _TEXT = (".csv", ".txt", ".tsv")
 
@@ -53,6 +55,8 @@ def refine_source_type(source_type: str, location: str | None) -> str:
             return "Excel workbook"
         if ext in _TEXT:
             return "CSV file"
+        if ext in _NAMED_FILES:
+            return _NAMED_FILES[ext]
         return "File"
     return source_type
 

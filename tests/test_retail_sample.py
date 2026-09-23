@@ -115,7 +115,8 @@ class SourceLabelTests(unittest.TestCase):
         self.assertEqual(r("Web", "https://example.org/api"), "Web / API")
         self.assertEqual(r("File", "C:\\data\\a.CSV"), "CSV file")
         self.assertEqual(r("File", "\\\\srv\\share\\b.xlsx"), "Excel workbook")
-        self.assertEqual(r("File", "C:\\data\\c.json"), "File")
+        self.assertEqual(r("File", "C:\\data\\c.json"), "JSON file")
+        self.assertEqual(r("File", "C:\\data\\d.bin"), "File")
         self.assertEqual(r("SQL Server", ""), "SQL Server")
 
     def test_label(self):

@@ -15,6 +15,7 @@ def build_primary_sources(model, report, source_objects, analysis_issues=None, t
     # Shared queries with no traced model consumer also belong in the inventory.
     # Parameters alone are not external sources, and no page usage is invented.
     tracer = Tracer(source_definitions(model))
+    known = {(r.get('sourceType'), r.get('location') or r.get('server')) for r in source_objects}
     report_name = report['name'] if report else 'Not supplied'
     for expression in model.get('expressions', []):
         name = expression['name']
@@ -24,6 +25,10 @@ def build_primary_sources(model, report, source_objects, analysis_issues=None, t
         if value.kind in {'text', 'literal'} and not value.connections and not value.objects:
             continue
         for item in materialize(value):
+            if (item.get('sourceType'), item.get('location') or item.get('server')) in known:
+                # Helper queries (Combine files' Sample File / Transform Sample File)
+                # re-read a source a model table already lists.
+                continue
             candidates.append(dict(item, report=report_name, page='', pageId='',
                                    pageScope='No model consumer resolved', pageUsage='Not assessed',
                                    queryName=name, table=''))

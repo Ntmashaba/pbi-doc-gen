@@ -298,6 +298,16 @@ class Tracer:
             else:
                 result.issues.append('Dynamic M concatenation cannot be resolved')
             return result
+        if ts[0].value == '(' and 0 in pairs and pairs[0] + 2 < len(ts) \
+                and ts[pairs[0] + 1].value == '=' and ts[pairs[0] + 2].value == '>':
+            # A function definition, (x as binary) => body. Its parameters are
+            # inputs supplied at call time; anything the body opens itself
+            # (a connector with a literal server) is still a source.
+            params = {t.value for t in ts[1:pairs[0]] if t.kind == 'id' and t.value not in {'as', 'optional', 'nullable'}}
+            body = self.evaluate(ts[pairs[0] + 3:],
+                                 lambda name: Value(kind='literal', text=name) if name in params else resolve(name))
+            body.kind, body.text = 'function', 'function'
+            return body
         if len(ts) > 1 and all(t.kind not in ('id', 'string') and t.value not in '([{' for t in ts):
             # Literals and operators only (-1, 2 * 3): a constant.
             return Value(text=''.join(t.value for t in ts), kind='literal')
@@ -395,6 +405,8 @@ class Tracer:
                     result.effects.append('Row filter; may affect which records reach the model')
                 elif fn in {'Table.SelectColumns', 'Table.RemoveColumns'}:
                     result.effects.append('Column selection/removal; surviving source-column contribution not proven')
+                if fn in {'Table.AddColumn', 'Table.ExpandTableColumn', 'Table.TransformColumns'}:
+                    combine_folder(result)
                 return result
             args = [self.evaluate(arg, resolve) for arg in arg_tokens if arg]
             if fn in EXTERNAL:
@@ -423,6 +435,10 @@ class Tracer:
             if fn in PURE or (pure_library(fn) and fn not in self.definitions):
                 return union(args)
             function = resolve(fn)
+            if fn in self.definitions and function.kind == 'function':
+                # Invoking one of the model's own functions (Combine files'
+                # Transform File): sources come from its arguments and its body.
+                return union(args + [function])
             if function.references or function.connections or function.objects:
                 args.append(function)
             namespace = fn.split('.', 1)[0] if '.' in fn else ''
@@ -570,6 +586,10 @@ class Tracer:
 
     def navigate(self, base, record):
         result = union([base, record])
+        if (record.kind == 'literal' and record.text.isdigit() and base.connections
+                and all(c.get('navigationMode') in {'files', 'hierarchy'} for c in base.connections)):
+            # Folder{0}: a sample file for Combine files. The source stays the folder.
+            return result
         if record.kind != 'record' or not base.connections:
             result.issues.append('Navigation target or key is unresolved')
             return result
@@ -620,6 +640,21 @@ class Tracer:
         result.connections = [conn]
         result.kind = 'table' if result.objects else 'connection'
         return result
+
+
+COLLECTION_UNRESOLVED = 'Collection location identified; individual item selection unresolved'
+
+
+def combine_folder(value):
+    """Combine files: a function applied to every file of a folder listing
+    (Folder.Files, SharePoint.Files). The source is the folder as a whole; no
+    individual file is claimed."""
+    for row in value.objects:
+        if row.get('sourceKind') in {'files', 'hierarchy'} and not row.get('object') and row.get('location'):
+            row['object'] = '(all files)'
+            row['notes'] = [n for n in row.get('notes', []) if n != COLLECTION_UNRESOLVED]
+            row['evidence'] = 'Combine files: every file in the folder is read'
+            row['objectType'] = 'Folder (combined files)'
 
 
 def materialize(value):
