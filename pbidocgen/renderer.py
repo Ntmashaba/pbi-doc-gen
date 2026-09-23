@@ -46,7 +46,17 @@ def build_payload(model: dict | None, report: dict | None,
 
 
 def render_html(payload: dict, out_path: str | Path) -> Path:
+    from .catalog import read_metadata, validate_metadata, json_script
+    out_path = Path(out_path)
+    metadata = payload.get("documentation")
+    if metadata is None and out_path.exists():
+        metadata = read_metadata(out_path.read_text(encoding="utf-8-sig"))
+    metadata = validate_metadata(metadata or {})
+    payload = dict(payload, documentationFilename=out_path.name)
     template = TEMPLATE.read_text(encoding="utf-8")
+    template = template.replace('<!--__DOCUMENTATION_METADATA__-->',
+        '<script type="application/json" id="pbi-documentation-metadata">' + json_script(metadata) + '</script>')
+    template = template.replace('/*__DOCUMENTATION_JS__*/', TEMPLATE.with_name('report_metadata.js').read_text(encoding='utf-8'))
     blob = json.dumps(payload, ensure_ascii=False)
     # keep the embedded JSON from terminating the script block early
     blob = blob.replace("</", "<\\/")

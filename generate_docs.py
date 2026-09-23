@@ -65,7 +65,20 @@ def main(argv=None) -> int:
                     help="Also write an agent context document (.agent.md) — the compact "
                          "markdown distillation for LLM agents. With no PATH, writes next "
                          "to the HTML output")
+    ap.add_argument("--catalog", metavar="FOLDER", help="Build or refresh pbi-home.html from existing HTML files; no model required")
+    ap.add_argument("--metadata", metavar="JSON", help="Apply report location and username references from a documentation JSON file")
+    ap.add_argument("--no-hub", action="store_true", help="Do not refresh the documentation home after generation")
     args = ap.parse_args(argv)
+    from pbidocgen.catalog import build_catalog, validate_metadata
+    if args.catalog and not (args.model or args.report or args.project):
+        if args.metadata:
+            ap.error("--metadata requires a report/model generation input")
+        try:
+            print(f"Wrote {build_catalog(args.catalog)}")
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return 0
 
     if not args.model and not args.report and not args.project:
         ap.error("Provide --project, --model, --report, or a combination.")
@@ -137,8 +150,18 @@ def main(argv=None) -> int:
         or project_title or (report["name"] if report else "Power BI")
     payload = build_payload(model, report, linked, title)
 
+    if args.metadata:
+        try:
+            payload['documentation'] = validate_metadata(json.loads(Path(args.metadata).read_text(encoding='utf-8-sig')))
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     out = args.output or f"{title}.html"
-    path = render_html(payload, out)
+    try:
+        path = render_html(payload, out)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     print(f"Wrote {path}  ({path.stat().st_size/1024:.0f} KB, mode: {payload['mode']})")
 
     if args.json_out:
@@ -163,6 +186,12 @@ def main(argv=None) -> int:
         ap_ = render_agent_md(payload, apath)
         print(f"Wrote {ap_}  ({ap_.stat().st_size/1024:.0f} KB, "
               f"~{estimate_tokens(ap_.read_text(encoding='utf-8')):,} tokens, agent context)")
+    if not args.no_hub:
+        try:
+            print(f"Wrote {build_catalog(args.catalog or path.parent)}")
+        except (OSError, ValueError) as exc:
+            print(f"error: report generated but home page could not be refreshed: {exc}", file=sys.stderr)
+            return 2
     return 0
 
 

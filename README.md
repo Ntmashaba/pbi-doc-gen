@@ -62,8 +62,7 @@ are embedded during generation, so you do not need to distribute them beside it.
 Use **Primary sources** to see external databases, SharePoint files/lists,
 local/network files, folders, web/API endpoints, OData and Azure storage. The
 source is the external input: a workbook reader, staging query or calculated
-result is not another source. See [CONNECTOR-COVERAGE.md](CONNECTOR-COVERAGE.md)
-for documented functions, supported forms and limitations. This implementation
+result is not another source. This implementation
 is not the complete Microsoft connector catalogue; unsupported sources remain
 visible as unresolved query entries.
 
@@ -116,9 +115,6 @@ spreadsheet-formula-like cells receive a protective leading apostrophe.
 All browser CSV filenames now include the report name (with filename-unsafe
 characters replaced). Explicit command-line `--csv PATH` destinations are
 unchanged. Regenerate the HTML to obtain the new export button.
-
-See [ADVERSARIAL-REVIEW.md](ADVERSARIAL-REVIEW.md) for the consolidated fix
-register, remediation status and reproduction steps.
 
 ## Source objects from M and embedded SQL
 
@@ -623,3 +619,97 @@ CSV fields are double-quoted; embedded quotes are doubled. Commas and tabs remai
 inside their fields, and multiline values retain their line breaks. Use a CSV-aware
 importer that respects quoted fields. The no-code export avoids multiline code
 cells; it does not remove company identifiers from the remaining source metadata.
+
+## Local documentation home and report details
+
+Every normal generation now refreshes **`pbi-home.html`** beside the report HTML.
+Double-click it to browse every `.html` / `.htm` file directly in that folder,
+including older generated documents. No server or internet connection is required.
+Other home-page catalogues are excluded. Subfolders are not scanned in this first version.
+Use `--no-hub` to generate only the individual outputs.
+
+To catalogue files you already generated, without reading a Power BI project again:
+
+```powershell
+python generate_docs.py --catalog "C:\Documentation"
+```
+
+In each newly generated report, open **Report details**. Set the original report URL
+or filesystem path, and optionally a catalogue folder such as `Finance / Monthly`.
+The home page shows a folder tree using that override, otherwise the parent path of
+the original location. Reports without either appear under **Ungrouped**. The report
+card always opens the generated documentation; a separate original-location link
+opens the recorded URL/path where browser and office policies allow it. A path
+ending in a slash is treated as a folder. This hierarchy is organisational metadata;
+it does not move files or scan remote Power BI/SharePoint locations.
+
+Connection references begin with detected source type, server/location and database.
+You can add a connection name, authentication method, and username/service account.
+These are manually maintained references, not credentials retrieved from the Power BI
+Service or gateway. There are no password/token fields. Do not put secrets in these
+text fields or URLs. Existing source-code exports retain their original behaviour;
+this feature does not redact secrets that might already be embedded in M or SQL.
+
+**To save edits:** click **Download updated HTML**, replace the original document in
+your output folder with that download, and choose **Refresh from folder** on the home
+page. Edits are embedded in the downloaded HTML, not saved in browser storage.
+Selecting a folder updates the current home-page view; **Download refreshed home**
+saves that updated list. Put it beside the report files as `pbi-home.html`. Browsers
+may append a number to downloaded filenames; replace the original instead of keeping
+both copies. Until you save, edits exist only in the open page.
+
+The home page initially shows the snapshot taken at generation time. Browsers cannot
+silently watch/read neighbouring files: select the folder again after files change,
+or rerun `--catalog`. Folder selection reads HTML metadata without running report
+scripts; links opened from that scan use temporary local Blob URLs. The downloaded
+home page uses relative filenames so the folder can be moved together.
+
+Regenerating to the **same output filename** preserves its embedded details. Saved
+connection references remain available even if the detected sources change; review
+those references when changing models. To apply or replace metadata explicitly:
+
+```powershell
+python generate_docs.py --project "C:\Reports\Sales.pbip" --output "C:\Documentation\Sales.html" --metadata "C:\Documentation\Sales.metadata.json"
+```
+
+Example metadata (only these fields are accepted):
+
+```json
+{
+  "reportLocation": "C:\\Reports\\Finance\\Sales.pbip",
+  "folder": "Finance / Monthly",
+  "connections": [
+    {
+      "sourceType": "SQL",
+      "server": "sql01",
+      "database": "Reporting",
+      "connectionName": "Reporting warehouse",
+      "username": "CORP\\report_reader",
+      "authentication": "Windows"
+    }
+  ]
+}
+```
+
+An empty `{}` metadata file clears previously saved details. Invalid embedded metadata
+blocks report replacement, avoiding silent loss. An unrelated file already named
+`pbi-home.html` is never overwritten by catalogue generation.
+
+### Verification for the local home
+
+`python tests/run_ci.py` includes catalogue discovery, metadata preservation, validation,
+HTML escaping, grouping, account search and safe location-link checks. The optional
+DOM integration check exercises edited HTML downloads and reopening, folder scanning,
+and saving/reopening the home page:
+
+```text
+python tests/build_browser_fixture.py
+node tests/check_catalog_dom.cjs
+```
+
+The DOM check requires `jsdom` to be installed in your Node environment; it is not a
+runtime dependency of the generator. A real-browser counterpart is available as
+`node tests/browser_catalog.cjs` with Playwright and Chromium installed. On this
+implementation run, 87 regression tests and the DOM integration check passed.
+Real-browser/visual verification remains pending because the Chromium download
+returned invalid archives in the execution environment.

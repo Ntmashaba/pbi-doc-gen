@@ -18,7 +18,7 @@ const action = (fn,...args) => esc(fn+'('+args.map(a=>JSON.stringify(a)).join(',
 const nodeId = (kind,table,name) => JSON.stringify([kind,table,name]);
 const listText = a => a?.length?a.map(esc).join('<br>'):'—';
 function rememberView(){
-  if(!activeTab) return;
+  if(!activeTab || activeTab==='report-details') return;
   const state={inputs:[],details:[]};
   document.querySelectorAll('#main input[id]:not([type=file]), #main select[id]').forEach(el=>{
     if(!['global-page','column-page','table-page','impact-field','impact-search'].includes(el.id)) state.inputs.push([el.id,el.value]);
@@ -27,6 +27,7 @@ function rememberView(){
   viewState.set(activeTab,state);
 }
 function restoreView(id){
+  if(id==='report-details') return;
   const state=viewState.get(id);
   if(id==='impact'){document.getElementById('impact-field').value=impactNode;document.getElementById('impact-search').value=impactQuery;}
   for(const [key,value] of state?.inputs||[]){if(id==='impact'&&['impact-field','impact-search'].includes(key)) continue;const el=document.getElementById(key);if(el) el.value=value;}
@@ -34,7 +35,7 @@ function restoreView(id){
   for(const key of ['global-page','column-page','table-page']){const el=document.getElementById(key);if(el) el.value=pageScope;}
 }
 function scopeBar(id){
-  const globalViews=['overview','rels','security','warnings','cleanup'];
+  const globalViews=['overview','rels','security','warnings','cleanup','report-details'];
   const pages=[...(R?.pages||[])];
   if(id==='compare') for(const p of comparison?.report?.pages||[]) if(!pages.some(x=>x.id===p.id)) pages.push(p);
   const note=globalViews.includes(id)?'This view covers the whole extract. Your page selection is retained for usage views.':

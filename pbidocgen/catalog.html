@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="pbi-documentation-hub" content="1"><title>Power BI · Documentation home</title>
+<style>
+:root{font-family:Segoe UI,system-ui,sans-serif;color:#182c39;background:#f2f5f6}*{box-sizing:border-box}body{margin:0}header{background:#153544;color:white;padding:42px max(5vw,20px);border-bottom:5px solid #dfb959}header small{letter-spacing:.15em;color:#e4c67b}h1{font-size:clamp(30px,4vw,48px);margin:12px 0}header p{color:#c8dbe3;max-width:720px;line-height:1.6}main{max-width:1200px;margin:auto;padding:30px 20px}.tools{display:flex;flex-wrap:wrap;gap:14px;align-items:center}input[type=search]{flex:1;min-width:210px;padding:14px;border:1px solid #a9bbc4;border-radius:8px;font:inherit}button,.picker{background:#173f51;color:white;padding:12px 18px;border:0;border-radius:7px;font:inherit;cursor:pointer}.picker input{display:block;max-width:240px;margin-top:8px;font:inherit;font-size:12px}#status{color:#506575;margin:20px 0}.tree details{border-left:2px solid #d5dfe3;margin:16px 0;padding-left:18px}summary{font-weight:600;cursor:pointer;padding:8px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.card{background:white;border:1px solid #d7e0e4;border-radius:10px;padding:22px;overflow-wrap:anywhere}.card h3{margin:0 0 10px}.card a{color:#176084}.card small,.muted{color:#617582}.location{font-size:13px;line-height:1.6}footer{padding:20px 0;color:#617582;font-size:13px}a:focus-visible,summary:focus-visible,button:focus-visible{outline:3px solid #c8972d;outline-offset:3px}
+</style></head><body>
+<header><small>PBI DOC GEN / LOCAL WORKSPACE</small><h1>Your report library</h1><p>Browse report documentation, follow its original location, and find the accounts associated with each source.</p></header>
+<main><div class="tools"><input id="search" type="search" placeholder="Search reports, locations or usernames" aria-label="Search reports" oninput="renderCatalog()"><label class="picker">Refresh from folder<input id="folder-picker" type="file" webkitdirectory multiple onchange="scanFiles(this.files)"></label><button onclick="downloadCatalog()">Download refreshed home</button></div><p id="status" role="status"></p><div id="tree" class="tree"></div><footer>The initial list reflects the folder at generation time. To see added files or changed details, select that same folder above. Only HTML files directly inside it are listed. Saving a refreshed home beside those files keeps the links portable.</footer></main>
+<script>
+let entries=/*__CATALOG__*/[];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function groupParts(metadata){
+ if(metadata.folder) return metadata.folder.split(/[\\/]/).map(s=>s.trim()).filter(Boolean);
+ let loc=(metadata.reportLocation||'').trim();
+ if(!loc) return ['Ungrouped'];
+ if(/^https?:\/\//i.test(loc)){
+  try{const url=new URL(loc);const path=url.pathname.split('/').filter(Boolean);if(!url.pathname.endsWith('/'))path.pop();return [url.hostname,...path];}catch{return ['Ungrouped'];}
+ }
+ loc=loc.replace(/\\/g,'/');const parts=loc.split('/').filter(Boolean);if(!loc.endsWith('/'))parts.pop();return parts.length?parts:['Ungrouped'];
+}
+function locationLink(location){
+ const value=(location||'').trim();
+ if(/^https?:\/\//i.test(value)){try{const url=new URL(value);return url.username||url.password?'':url.href;}catch{return '';}}
+ if(/^file:\/\//i.test(value))return value;
+ if(/^[A-Za-z]:[\\/]/.test(value)) return 'file:///'+value.replace(/\\/g,'/').split('/').map((v,i)=>i===0?v:encodeURIComponent(v)).join('/');
+ if(value.startsWith('\\\\'))return 'file://'+value.slice(2).split('\\').map(encodeURIComponent).join('/');
+ if(value.startsWith('/'))return 'file://'+value.split('/').map(encodeURIComponent).join('/');
+ return '';
+}
+function card(entry){
+ const m=entry.metadata||{},loc=m.reportLocation||'',link=locationLink(loc);
+ return `<article class="card"><h3><a href="${esc(entry.blobUrl||entry.href)}" target="_blank" rel="noopener">${esc(entry.title)}</a></h3><small>${esc(entry.filename)}${entry.generated?' · '+esc(entry.generated):''}</small>${loc?`<p class="location">Original location<br>${link?`<a href="${esc(link)}" target="_blank" rel="noopener">${esc(loc)}</a>`:esc(loc)}</p>`:'<p class="muted">No report location recorded</p>'}${(m.connections||[]).filter(c=>c.username).map(c=>`<p class="location">${esc(c.connectionName||c.server||c.sourceType)}<br>Account: <strong>${esc(c.username)}</strong></p>`).join('')}${entry.warning?`<p>${esc(entry.warning)}</p>`:''}</article>`;
+}
+function renderBranch(branch){return `${branch.rows.length?'<div class="cards">'+branch.rows.map(card).join('')+'</div>':''}${[...branch.children].sort(([a],[b])=>a.localeCompare(b)).map(([name,child])=>`<details open><summary>${esc(name)}</summary>${renderBranch(child)}</details>`).join('')}`;}
+function renderCatalog(){
+ const q=document.getElementById('search').value.toLowerCase(),filtered=entries.filter(e=>JSON.stringify([e.title,e.filename,e.metadata]).toLowerCase().includes(q));
+ const root={children:new Map(),rows:[]};
+ for(const entry of filtered){let branch=root;for(const part of groupParts(entry.metadata||{})){if(!branch.children.has(part))branch.children.set(part,{children:new Map(),rows:[]});branch=branch.children.get(part);}branch.rows.push(entry);}
+ document.getElementById('tree').innerHTML=filtered.length?renderBranch(root):'<p>No documents found. Choose your documentation folder to get started.</p>';
+ document.getElementById('status').textContent=`${filtered.length} of ${entries.length} documents · stored entirely in local files`;
+}
+function readEntry(text,filename){
+ const doc=new DOMParser().parseFromString(text,'text/html');
+ if(doc.querySelector('meta[name="pbi-documentation-hub"]'))return null;
+ let metadata={},warning='',title=filename.replace(/\.html?$/i,''),generated='';
+ const node=doc.getElementById('pbi-documentation-metadata');
+ if(node){try{
+  const value=JSON.parse(node.textContent);
+  if(!value||typeof value!=='object'||Array.isArray(value)||typeof(value.reportLocation||'')!=='string'||typeof(value.folder||'')!=='string'||!Array.isArray(value.connections||[])||(value.connections||[]).some(c=>!c||typeof c!=='object'||Object.values(c).some(v=>typeof v!=='string')))throw Error('Invalid metadata');
+  metadata={reportLocation:value.reportLocation||'',folder:value.folder||'',connections:(value.connections||[]).map(c=>Object.fromEntries(['sourceType','server','database','username','authentication','connectionName'].map(k=>[k,c[k]||''])))};
+ }catch{warning='Metadata could not be read; document remains available.';}}
+ // Read JSON only. Never evaluate scripts from scanned documents.
+ const script=[...doc.scripts].find(s=>/const DATA\s*=/.test(s.textContent));
+ if(script){try{const raw=script.textContent.split(/const DATA\s*=\s*/)[1];let depth=0,inString=false,escaped=false,end=0;
+  for(let i=0;i<raw.length;i++){const c=raw[i];if(inString){if(escaped)escaped=false;else if(c==='\\')escaped=true;else if(c==='"')inString=false;}else if(c==='"')inString=true;else if(c==='{')depth++;else if(c==='}'&&--depth===0){end=i+1;break;}}
+  const payload=JSON.parse(raw.slice(0,end));title=String(payload.title||title);generated=String(payload.generated||'');
+ }catch{}}
+ return {title,filename,generated,metadata,warning,href:encodeURIComponent(filename)};
+}
+let scanVersion=0;
+async function scanFiles(files){
+ if(!files.length)return;
+ const version=++scanVersion,newEntries=[];
+ for(const file of files){if(!/\.html?$/i.test(file.name)||file.webkitRelativePath.split('/').length>2)continue;
+  try{const text=await file.text(),entry=readEntry(text,file.name);if(entry){entry.blobUrl=URL.createObjectURL(new Blob([text],{type:'text/html'}));newEntries.push(entry);}}
+  catch{newEntries.push({title:file.name,filename:file.name,href:encodeURIComponent(file.name),metadata:{},warning:'File could not be read'});}
+ }
+ if(version!==scanVersion){newEntries.forEach(e=>e.blobUrl&&URL.revokeObjectURL(e.blobUrl));return;}
+ entries.forEach(e=>e.blobUrl&&URL.revokeObjectURL(e.blobUrl));entries=newEntries.sort((a,b)=>a.filename.localeCompare(b.filename));renderCatalog();
+}
+function downloadCatalog(){
+ const clone=document.documentElement.cloneNode(true),script=clone.querySelector('script');
+ const rows=entries.map(({blobUrl,...e})=>e);
+ const start=script.textContent.indexOf('let entries='),end=script.textContent.indexOf(';\nconst esc=',start);
+ script.textContent=script.textContent.slice(0,start)+'let entries='+JSON.stringify(rows).replace(/</g,'\\u003c')+script.textContent.slice(end);
+ clone.querySelector('#tree').innerHTML='';clone.querySelector('#search').value='';
+ const url=URL.createObjectURL(new Blob(['<!DOCTYPE html>\n'+clone.outerHTML],{type:'text/html;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='pbi-home.html';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+renderCatalog();
+</script></body></html>
