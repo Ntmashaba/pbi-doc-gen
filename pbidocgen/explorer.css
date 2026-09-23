@@ -2,6 +2,15 @@ table.t thead th .xl{color:inherit;text-decoration:none;font-weight:inherit;text
 table.t thead th .xl:hover{text-decoration:underline}
 .column-scroll details>summary{display:block}
 .column-scroll details>summary::before{margin-right:.35rem}
+.doc-grid{display:grid;grid-template-columns:1fr 1fr;gap:.2rem 1rem}.doc-grid .mut{grid-column:1/-1}
+.doc-field{display:flex;flex-direction:column;gap:.2rem;font-size:.8rem;color:var(--ink2)}.doc-field .search{width:100%;margin:0 0 .5rem;color:var(--ink)}
+.doc-field.compact>span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.doc-field.compact .search{margin:0}
+.doc-connections th{width:30%}.doc-connections th .mut{font-weight:400;overflow-wrap:anywhere}.doc-actions{width:1%;white-space:nowrap}.doc-edit-row td{background:var(--panel2)}
+.doc-edit{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0 1rem;align-items:end;padding:.3rem 0}
+.doc-savebar{position:sticky;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin:1.5rem -.2rem 0;padding:.7rem 1rem;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 -4px 16px #0000000d}
+.doc-savebar p{margin:0;color:var(--ink2);font-size:.85rem}.doc-savebar.dirty{border-color:var(--poss);background:var(--possBg)}.doc-savebar.dirty p{color:var(--ink)}
+.primary-btn{background:var(--ink);color:#fff;border:0;border-radius:6px;padding:.5rem .9rem;font:inherit;font-weight:600;cursor:pointer}.primary-btn:hover{background:#2d3a4a}
+@media(max-width:800px){.doc-grid{grid-template-columns:1fr}.doc-connections thead{display:none}.doc-connections tr{display:grid;grid-template-columns:1fr auto;gap:.3rem;padding:.5rem 0;border-bottom:1px solid var(--line2)}.doc-connections th,.doc-connections td{border:0;padding:.2rem .4rem;width:auto}.doc-connections th{grid-column:1/-1;min-width:0}.doc-connections td{min-width:0}.doc-field.compact>span{position:static;width:auto;height:auto;clip:auto}.doc-connections .doc-edit-row td{grid-column:1/-1}.doc-connections tr[hidden]{display:none}}
 .subtabs{display:flex;gap:.25rem;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:-.2rem 0 .8rem}
 .subtab{border:0;background:none;font:inherit;color:var(--ink2);padding:.5rem .75rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
 .subtab:hover{color:var(--ink)}

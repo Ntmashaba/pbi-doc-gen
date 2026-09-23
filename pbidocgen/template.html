@@ -39,6 +39,7 @@ nav{background:var(--panel);border-right:1px solid var(--line);padding:1.1rem .8
 .nav-btn:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
 .nav-btn .n{font-size:.75rem;color:inherit;font-variant-numeric:tabular-nums}
 .nav-btn.disabled{opacity:.5;cursor:not-allowed}
+.nav-toggle{display:none}
 /* ---------------- content ---------------- */
 main{padding:1.4rem 2rem 4rem;max-width:1240px}
 main{min-width:0}
@@ -108,7 +109,7 @@ svg text{font-family:var(--sans)}
 .legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.76rem;color:var(--ink2);margin:.4rem 0 .8rem}
 .legend span{display:flex;align-items:center;gap:.35rem}
 .dot{width:9px;height:9px;border-radius:2px;display:inline-block}
-@media (max-width:860px){.layout{grid-template-columns:1fr}nav{position:static;height:auto;display:flex;flex-wrap:wrap;gap:.25rem;border-right:0;border-bottom:1px solid var(--line);padding:.8rem 1rem}.doc-title,.brand{width:100%}.doc-title{margin-bottom:.4rem}.nav-btn{width:auto;padding:.35rem .6rem;border:1px solid var(--line)}main{padding:1rem}}
+@media (max-width:860px){.layout{grid-template-columns:1fr}nav{position:sticky;top:0;z-index:40;height:auto;display:grid;grid-template-columns:1fr auto;align-items:center;column-gap:.6rem;border-right:0;border-bottom:1px solid var(--line);padding:.6rem 1rem}.brand{grid-column:1}.doc-title{grid-column:1;margin:0}.nav-toggle{display:inline-flex;align-items:center;gap:.35rem;grid-column:2;grid-row:1/span 2;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:.4rem .7rem;font:inherit;color:var(--ink);cursor:pointer}#nav-sections{display:none;grid-column:1/-1;padding-top:.5rem}nav.open #nav-sections{display:block}main{padding:1rem}}
 @media print{nav{display:none}.layout{grid-template-columns:1fr}}
 /*__EXPLORER_CSS__*/
 </style>
@@ -206,14 +207,22 @@ function openSection(sid){
 }
 function buildNav(){
   const nav = document.getElementById("nav");
-  let html = `<div class="brand">Power BI documentation</div><div class="doc-title">${esc(DATA.title)}</div>`;
+  // On narrow screens the sections collapse behind a menu button (B8).
+  let html = `<div class="brand">Power BI documentation</div><div class="doc-title">${esc(DATA.title)}</div>
+    <button class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="nav-sections" onclick="toggleNav()"><span aria-hidden="true">☰</span> <span id="nav-current">Menu</span></button><div id="nav-sections">`;
   for(const s of SECTIONS){
     const avail = sectionTabs(s).some(t=>t.avail);
     html += avail
       ? `<button class="nav-btn" id="sec-${s.id}" onclick="openSection('${s.id}')">${esc(s.label)}</button>`
       : `<button class="nav-btn disabled" id="sec-${s.id}" title="Not available in ${MODE} mode" tabindex="-1">${esc(s.label)}</button>`;
   }
-  nav.innerHTML = html;
+  nav.innerHTML = html + "</div>";
+}
+function toggleNav(open){
+  const nav = document.getElementById("nav"), btn = document.getElementById("nav-toggle");
+  const next = open ?? !nav.classList.contains("open");
+  nav.classList[next?"add":"remove"]("open");
+  if(btn) btn.setAttribute("aria-expanded", String(next));
 }
 function subTabs(id){
   const tabs = sectionTabs(sectionOf(id));
@@ -239,6 +248,9 @@ function switchTab(id){
   document.querySelectorAll(".nav-btn").forEach(b=>{b.classList.remove("active");b.removeAttribute("aria-current");});
   const btn = document.getElementById("sec-"+section.id);
   if(btn){ btn.classList.add("active"); btn.setAttribute("aria-current","true"); }
+  const current = document.getElementById("nav-current");
+  if(current) current.textContent = section.label;
+  toggleNav(false);
   document.getElementById("main").innerHTML = subTabs(id) + scopeBar(id) + RENDER[id]();
   restoreView(id);
   window.scrollTo(0,0);
@@ -248,6 +260,7 @@ function switchTab(id){
   if(id==="tables") fTbl(document.getElementById("table-search").value);
   if(id==="manifest") fMan(document.getElementById("manifest-search").value);
   if(id==="sources"){ filterSourceList(); filterSourceObjects(); filterPrimarySources(); }
+  if(id==="report-details") updateSaveBar();
   if(id==="measures") fMea(document.getElementById("measure-search").value);
 }
 

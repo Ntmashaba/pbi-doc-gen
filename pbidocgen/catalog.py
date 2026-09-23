@@ -78,6 +78,8 @@ def describe_html(text, filename):
     title = Path(filename).stem
     generated = ''
     pbix_source = ''
+    mode = ''
+    summary = {}
     match = re.search(r'const DATA\s*=\s*', text)
     if match:
         try:
@@ -86,9 +88,31 @@ def describe_html(text, filename):
                 title = str(payload.get('title') or title)
                 generated = str(payload.get('generated') or '')
                 pbix_source = str(payload.get('pbixSource') or '')
+                mode = str(payload.get('mode') or '')
+                summary = clean_summary(payload.get('summary'))
         except (ValueError, TypeError):
             pass
-    return dict(title=title, filename=filename, generated=generated, metadata=parser.metadata or {}, pbixSource=pbix_source)
+    return dict(title=title, filename=filename, generated=generated, metadata=parser.metadata or {},
+                pbixSource=pbix_source, mode=mode, summary=summary)
+
+
+def clean_summary(value):
+    """Keep only the known, plain-text summary fields a report may carry."""
+    if not isinstance(value, dict):
+        return {}
+    text = lambda v: v if isinstance(v, str) else ''
+    number = lambda v: v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else 0
+    counts = value.get('counts') if isinstance(value.get('counts'), dict) else {}
+    sources = []
+    for s in value.get('sources') or []:
+        if isinstance(s, dict):
+            sources.append({k: text(s.get(k)) for k in ('label', 'sourceType', 'server', 'database', 'location')}
+                           | {'tables': [t for t in s.get('tables') or [] if isinstance(t, str)]})
+    return {'counts': {k: number(counts.get(k)) for k in ('tables', 'columns', 'measures', 'pages', 'visuals')},
+            'sources': sources,
+            'coverageIssues': number(value.get('coverageIssues')),
+            'deletionCandidates': number(value.get('deletionCandidates')),
+            'needsReview': number(value.get('needsReview'))}
 
 
 def build_catalog(folder, output=None):

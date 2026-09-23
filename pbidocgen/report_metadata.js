@@ -21,23 +21,61 @@ for(const source of DATA.sourceObjects||[]){
  if(saved){ if(source.sourceType) saved.sourceType=source.sourceType; }
  else documentation.connections.push(Object.fromEntries(['sourceType','server','database','username','authentication','connectionName'].map(k=>[k,source[k]||''])));
 }
-function documentationInput(label,id,value){return `<label style="display:block;margin:1rem 0">${esc(label)}<input class="search" style="display:block;width:100%;max-width:900px" id="${id}" value="${esc(value)}" oninput="captureDocumentation()"></label>`;}
+// Snapshot of what the file already holds, so the save bar can show unsaved edits.
+let savedDocumentation=JSON.stringify(cleanDocumentation(documentation));
+const CONNECTION_FIELDS={connectionName:'Connection name',sourceType:'Source type',server:'Server / location',database:'Database / service'};
+function documentationInput(label,id,value,cls=''){return `<label class="doc-field ${cls}"><span>${esc(label)}</span><input class="search" id="${id}" value="${esc(value)}" oninput="captureDocumentation()"></label>`;}
+function unsavedCount(){
+ const now=cleanDocumentation(documentation),then=JSON.parse(savedDocumentation);
+ let n=(now.reportLocation!==then.reportLocation)+(now.folder!==then.folder);
+ const len=Math.max(now.connections.length,then.connections.length);
+ for(let i=0;i<len;i++) if(JSON.stringify(now.connections[i])!==JSON.stringify(then.connections[i])) n++;
+ return n;
+}
+function updateSaveBar(){
+ const n=unsavedCount(),bar=document.getElementById('doc-savebar'),status=document.getElementById('doc-status');
+ if(!bar||!status) return;
+ bar.classList[n>0?'add':'remove']('dirty');
+ status.textContent=n?`${n} unsaved ${n===1?'change':'changes'}. Download the updated HTML and replace the original file to keep them.`:'No unsaved changes. After downloading, replace the original file, then refresh the home page catalogue.';
+}
 function captureDocumentation(){
  documentation.reportLocation=document.getElementById('doc-location').value;
  documentation.folder=document.getElementById('doc-folder').value;
  documentation.connections.forEach((c,i)=>Object.keys(c).forEach(k=>{c[k]=document.getElementById(`doc-${i}-${k}`).value;}));
- document.getElementById('doc-status').textContent='Unsaved edits — download updated HTML to keep these details.';
+ updateSaveBar();
 }
-function addDocumentationConnection(){captureDocumentation();documentation.connections.push({sourceType:'',server:'',database:'',username:'',authentication:'',connectionName:''});switchTab('report-details');}
-function removeDocumentationConnection(i){captureDocumentation();documentation.connections.splice(i,1);switchTab('report-details');}
-function rDocumentation(){return `<h1>Report details</h1><p class="sub">Keep the original report location and connection account references with this document. Enter usernames or service account names only. Do not enter passwords, tokens or secret-bearing URLs.</p>
-${documentationInput('Original report URL or file path','doc-location',documentation.reportLocation)}
-${documentationInput('Catalogue folder (optional override, e.g. Finance / Monthly)','doc-folder',documentation.folder)}
-<p class="mut">The home page groups by this folder, or by the parent of the report location. Without either, it lists the document under Ungrouped.</p>
-<h2>Connections and account references</h2><p class="mut">Detected connections are starting points. Account details are entered manually; the generator does not retrieve credentials from Power BI. Saved references may need updating when sources change.</p>
-${documentation.connections.map((c,i)=>`<details style="padding:1rem;border:1px solid var(--line);margin-bottom:1rem" open><summary>${esc(c.connectionName||c.server||'Connection '+(i+1))}</summary>${Object.entries({connectionName:'Connection name',sourceType:'Source type',server:'Server / location',database:'Database / service',username:'Username / service account',authentication:'Authentication method (reference only)'}).map(([k,label])=>documentationInput(label,`doc-${i}-${k}`,c[k])).join('')}<button onclick="removeDocumentationConnection(${i})">Remove reference</button></details>`).join('')}
-<p><button onclick="addDocumentationConnection()">Add connection reference</button> <button class="xl" onclick="saveDocumentationHtml()">Download updated HTML</button></p>
-<p id="doc-status" role="status">Save an updated HTML after editing. Replace the original file in your documentation folder, then refresh the home page catalogue.</p>`;}
+function addDocumentationConnection(){captureDocumentation();documentation.connections.push({sourceType:'',server:'',database:'',username:'',authentication:'',connectionName:''});documentationOpen.add(documentation.connections.length-1);switchTab('report-details');}
+function removeDocumentationConnection(i){captureDocumentation();documentation.connections.splice(i,1);documentationOpen.clear();switchTab('report-details');}
+const documentationOpen=new Set();
+function toggleConnectionEdit(i){
+ documentationOpen.has(i)?documentationOpen.delete(i):documentationOpen.add(i);
+ const row=document.getElementById(`doc-edit-${i}`),btn=document.getElementById(`doc-edit-${i}-btn`);
+ if(row) row.hidden=!documentationOpen.has(i);
+ if(btn) btn.setAttribute('aria-expanded',String(documentationOpen.has(i)));
+}
+const FILE_CONNECTION_TYPES=new Set(['SharePoint file','Excel workbook','CSV file','File']);
+function connectionTitle(c,i){
+ const file=FILE_CONNECTION_TYPES.has(c.sourceType)&&c.server?c.server.split(/[\\/]/).filter(Boolean).pop():'';
+ const name=c.connectionName||file||[c.server,c.database].filter(Boolean).join(' / ')||'New connection '+(i+1);
+ const where=file||c.connectionName?[c.server,c.database].filter(Boolean).join(' / '):'';
+ return `${c.sourceType?esc(c.sourceType)+' · ':''}${esc(name)}${where?`<div class="mut">${esc(where)}</div>`:''}`;
+}
+function rDocumentation(){
+ const rows=documentation.connections.map((c,i)=>`<tr>
+  <th>${connectionTitle(c,i)}</th>
+  <td>${documentationInput('Username / service account',`doc-${i}-username`,c.username,'compact')}</td>
+  <td>${documentationInput('Authentication (reference only)',`doc-${i}-authentication`,c.authentication,'compact')}</td>
+  <td class="doc-actions"><button class="chip" id="doc-edit-${i}-btn" aria-expanded="${documentationOpen.has(i)}" aria-controls="doc-edit-${i}" onclick="toggleConnectionEdit(${i})">Edit</button></td></tr>
+  <tr class="doc-edit-row" id="doc-edit-${i}"${documentationOpen.has(i)?'':' hidden'}><td colspan="4"><div class="doc-edit">${Object.entries(CONNECTION_FIELDS).map(([k,label])=>documentationInput(label,`doc-${i}-${k}`,c[k])).join('')}
+   <div><button class="chip" onclick="removeDocumentationConnection(${i})">Remove reference</button></div></div></td></tr>`).join('');
+ return `<h1>Report details</h1><p class="sub">Keep the original report location and connection account references with this document. Enter usernames or service account names only; never passwords, tokens or secret-bearing URLs.</p>
+<div class="card doc-grid">${documentationInput('Original report URL or file path','doc-location',documentation.reportLocation)}
+${documentationInput('Catalogue folder (optional, e.g. Finance / Monthly)','doc-folder',documentation.folder)}
+<p class="mut">The home page groups by this folder, or by the parent of the report location. Without either, it lists the document under Ungrouped.</p></div>
+<h2>Connections and account references</h2><p class="mut">Detected connections are starting points. Account details are entered manually; the generator does not retrieve credentials from Power BI. Use Edit to change a connection's name, type, server or database.</p>
+<table class="t doc-connections"><thead><tr><th>Connection</th><th>Username / service account</th><th>Authentication</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="4">No connections recorded.</td></tr>'}</tbody></table>
+<p><button class="chip" onclick="addDocumentationConnection()">Add connection reference</button></p>
+<div id="doc-savebar" class="doc-savebar"><p id="doc-status" role="status"></p><button class="primary-btn" onclick="saveDocumentationHtml()">Download updated HTML</button></div>`;}
 function saveDocumentationHtml(){
  captureDocumentation();
  const clone=document.documentElement.cloneNode(true);
@@ -46,7 +84,8 @@ function saveDocumentationHtml(){
  const blob=new Blob(['<!DOCTYPE html>\n'+clone.outerHTML],{type:'text/html;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;
  a.download=DATA.documentationFilename||'report.html';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
- document.getElementById('doc-status').textContent='Download requested. Replace the original HTML with the downloaded file to keep these details, then refresh the home page catalogue.';
+ savedDocumentation=JSON.stringify(cleanDocumentation(documentation));updateSaveBar();
+ document.getElementById('doc-status').textContent='Downloaded. Replace the original HTML with the downloaded file to keep these details, then refresh the home page catalogue.';
 }
 TABS.push({id:'report-details',label:'Report details',group:'Documentation',avail:true});
 RENDER['report-details']=rDocumentation;

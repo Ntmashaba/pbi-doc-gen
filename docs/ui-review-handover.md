@@ -48,7 +48,19 @@ Not done from C: sharing tokens and components with the hub (`catalog.html`). Mo
 - **B6:** Measure rows show "used on N pages", the format string and a one-line DAX preview while collapsed, and are grouped by display folder (unfiled last). Search covers names, folders and DAX. The retail sample now has display folders on six measures.
 - **Browser test:** the export loop expands a collapsed section before clicking its button.
 
-Next is plan step 4: B7, B8 and the hub index (D).
+### Step 4 (B7, B8, D hub index)
+
+- **B7:** Report details has the location and folder side by side, then one table row per connection: source name (file name for file sources), username and authentication inline, and an Edit button that opens a full-width row for name, type, server, database and Remove. A sticky save bar counts unsaved changes against what the file holds and highlights when there are any. Input ids (`doc-location`, `doc-folder`, `doc-<i>-<field>`) and button labels are unchanged, so saved files and the save/reopen flow still work.
+- **B8:** below 860px the rail collapses to the report title and a menu button naming the current section; picking a section closes it. The top bar is about 60px instead of about 180px, with no horizontal scroll at 390px.
+- **D, hub index:** `renderer.build_summary` adds a `summary` block to every payload (counts, source identities with their model tables, coverage issue count, cleanup candidate and review counts; no code). `catalog.describe_html` and the hub's folder scan both read it through a whitelist (`clean_summary` / `cleanSummary`). The hub has a "Sources across reports" table, source tags on each card that filter the list, mode, coverage and cleanup badges, and search over server, database, file and table names. Older documents are listed with a note to regenerate them.
+- **C (hub):** `catalog.html` now uses the report's tokens, buttons, badges and type, including an accessible folder picker button instead of a native file input.
+- **Tests:** a summary/whitelist test in `test_catalog.py` (114 total). `browser_catalog.cjs` checks the save bar, the edit row and the hub source index; `browser_review.cjs` checks the mobile menu at 390px. `check_catalog_dom.cjs` (jsdom) passes.
+
+### Still open from the review
+
+- D: documentation coverage on Overview (descriptions, format strings), duplicate-measure detection, and "which visuals show this measure" on Measures (the Page layout and Impact inspector show it).
+- The two source parsers (`model_parser` patterns and the M tracer) still exist side by side; only their vocabulary is shared.
+- Wide tables (Columns, source objects) still scroll horizontally on laptops.
 
 ## Environment notes
 

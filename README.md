@@ -46,6 +46,16 @@ with code, and all M queries) and their CSV exports are collapsible sections bel
 **Page layout** colours each visual by kind, lists the measures (Σ) and columns it
 uses, and flags unresolved bindings. **Measures** are grouped by display folder and
 show pages used, format string and a one-line DAX preview without expanding.
+**Report details** lists one compact row per connection (username and
+authentication inline, Edit for the rest) with a save bar that counts unsaved
+changes. On narrow screens the sections sit behind a menu button.
+
+The **home page** (`--catalog`) indexes every report's sources: a "Sources across
+reports" table shows which reports use each server, database or file, and each
+report card shows its sources as tags (select one to filter), its mode, analysis
+coverage and cleanup candidates. Reports carry this as a small `summary` block;
+documents generated before it existed still list, without sources, until
+regenerated.
 
 ## Explore usage by report page
 

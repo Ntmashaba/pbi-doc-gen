@@ -84,3 +84,26 @@ class CatalogTests(unittest.TestCase):
         home = build_catalog(self.root)
         result = subprocess.run(['node', str(Path(__file__).with_name('check_catalog.cjs')), str(home)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_report_summary_feeds_the_hub_index(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent / 'samples'))
+        from build_retail_sample import build_retail_payload
+        from pbidocgen.catalog import clean_summary
+        payload = build_retail_payload()
+        summary = payload['summary']
+        self.assertEqual({s['label'] for s in summary['sources']},
+                         {'SQL Server \u00b7 finance-sql.corp.local / FinanceDW',
+                          'SharePoint file \u00b7 Budget FY26.xlsx', 'CSV file \u00b7 targets.csv'})
+        self.assertEqual(summary['counts'], {'tables': 7, 'columns': 45, 'measures': 14, 'pages': 3, 'visuals': 10})
+        self.assertEqual((summary['coverageIssues'], summary['deletionCandidates'], summary['needsReview']), (1, 14, 2))
+        with tempfile.TemporaryDirectory() as d:
+            render_html(payload, Path(d) / 'Retail.html')
+            row = describe_html((Path(d) / 'Retail.html').read_text(encoding='utf-8'), 'Retail.html')
+        self.assertEqual(row['mode'], 'combined')
+        self.assertEqual(row['summary'], clean_summary(summary))
+        # Untrusted summaries keep only known plain fields.
+        self.assertEqual(clean_summary({'counts': {'tables': -1, 'pages': '3'}, 'sources': [{'label': 1, 'tables': ['A', 2]}],
+                                        'evil': '<script>'}),
+                         {'counts': {'tables': 0, 'columns': 0, 'measures': 0, 'pages': 0, 'visuals': 0},
+                          'sources': [{'label': '', 'sourceType': '', 'server': '', 'database': '', 'location': '', 'tables': ['A']}],
+                          'coverageIssues': 0, 'deletionCandidates': 0, 'needsReview': 0})

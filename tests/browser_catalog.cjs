@@ -14,14 +14,17 @@ const {pathToFileURL}=require('node:url'),{execFileSync}=require('node:child_pro
  try{
   await page.goto(pathToFileURL(report).href);
   await page.locator('#sec-details').click();
+  assert.match(await page.locator('#doc-status').innerText(),/No unsaved changes/);
   await page.locator('#doc-location').fill('C:\\Reports\\Finance\\Monthly\\Sales.pbip');
   await page.locator('#doc-0-username').fill('CORP\\reader');
+  assert.match(await page.locator('#doc-status').innerText(),/2 unsaved changes/);
   await page.locator('#sec-overview').click();await page.locator('#sec-details').click();
   assert.equal(await page.locator('#doc-0-username').inputValue(),'CORP\\reader');
   await page.getByRole('button',{name:'Add connection reference',exact:true}).click();
   const last=await page.locator('input[id$="-username"]').count()-1;
   await page.locator(`#doc-${last}-username`).fill('second_user');
-  await page.locator('button').filter({hasText:'Remove reference'}).first().click();
+  await page.locator('#doc-edit-0-btn').click();
+  await page.locator('#doc-edit-0').getByRole('button',{name:'Remove reference',exact:true}).click();
   assert.equal(await page.locator('input[id$="-username"]').last().inputValue(),'second_user');
   await page.locator('#doc-folder').fill('Finance / <img src=x onerror="globalThis.injected=1">');
   await download('Download updated HTML',report);
@@ -33,6 +36,11 @@ const {pathToFileURL}=require('node:url'),{execFileSync}=require('node:child_pro
   await page.goto(pathToFileURL(path.join(root,'pbi-home.html')).href);
   await page.getByText('Monthly',{exact:true}).waitFor();
   assert.match(await page.locator('#tree').innerText(),/second_user/);
+  // Cross-report source index and clickable source tags.
+  assert.match(await page.locator('#source-index').innerText(),/SQL Server · server \/ db/);
+  await page.locator('#source-index .tag').first().click();
+  assert.equal(await page.locator('#search').inputValue(),await page.locator('#source-index .tag').first().innerText());
+  assert.equal(await page.locator('.card').count(),1);await page.locator('#search').fill('');
   assert.equal(await page.locator('.card h3 a').getAttribute('href'),'Sales%20%231.html');
   assert.equal(await page.evaluate(()=>locationLink('javascript:alert(1)')),'');
   assert.equal(await page.evaluate(()=>locationLink('https://user:secret@example.com/report')),'');

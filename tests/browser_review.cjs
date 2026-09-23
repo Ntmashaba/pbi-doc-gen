@@ -11,7 +11,9 @@ const {execFileSync}=require('node:child_process');
  try{
   await page.goto(pathToFileURL(path.resolve(process.argv[2])).href);
   // Six sections in the rail; each view is a sub-tab inside its section.
-  const openTab=async id=>{const sec=await page.evaluate(id=>sectionOf(id).id,id);await page.locator('#sec-'+sec).click();
+  const openTab=async id=>{const sec=await page.evaluate(id=>sectionOf(id).id,id);
+   if(await page.locator('#nav-toggle').isVisible()) await page.locator('#nav-toggle').click();
+   await page.locator('#sec-'+sec).click();
    if(await page.locator('#nav-'+id).count()) await page.locator('#nav-'+id).click();
    assert.equal(await page.evaluate(()=>activeTab),id);};
   assert.equal(await page.evaluate(()=>activeTab),'overview');
@@ -61,6 +63,12 @@ const {execFileSync}=require('node:child_process');
   assert.equal((await pending).suggestedFilename(),'Sales-extract-changes-by-page.csv');
   await page.setViewportSize({width:768,height:900});await openTab('matrix');
   assert.ok(await page.locator('.matrix').isVisible());
+  // Narrow screens: sections sit behind the menu button, which names the current section.
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(!(await page.locator('#sec-overview').isVisible()));
+  assert.equal((await page.locator('#nav-current').innerText()).trim(),'Impact & changes');
+  await openTab('overview');assert.ok(!(await page.locator('#sec-overview').isVisible()));
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
   assert.deepEqual(errors,[]);
   fs.rmSync(tmp,{recursive:true,force:true});console.log('Chromium regression checks passed.');
  }finally{await browser.close();}
