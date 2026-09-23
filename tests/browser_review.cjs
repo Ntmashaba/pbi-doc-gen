@@ -57,7 +57,8 @@ const {execFileSync}=require('node:child_process');
    if(suffix==='source-queries.csv') execFileSync('python',['-c','import csv,sys; f=open(sys.argv[1],encoding="utf-8-sig",newline=""); r=csv.reader(f); assert next(r)==["report","query name","query m code"]; assert any(row[1]=="Stage" and "\\n" in row[2] for row in r)',file]);
   }
   const baseline=JSON.parse(fs.readFileSync('/tmp/pbidocgen-browser.json','utf8'));baseline.model.expressions[0].expression='changed';
-  await openTab('compare');await page.locator('input[type=file]').setInputFiles({name:'before.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(baseline))});
+  // Comparison is an advanced route, intentionally absent from navigation.
+  await page.goto(page.url().split('#')[0]+'#compare');await page.locator('input[type=file]').setInputFiles({name:'before.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(baseline))});
   await page.locator('tbody th').filter({hasText:'Shared expression'}).waitFor();
   const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Export changes by page',exact:true}).click();
   assert.equal((await pending).suggestedFilename(),'Sales-extract-changes-by-page.csv');
@@ -66,7 +67,7 @@ const {execFileSync}=require('node:child_process');
   // Narrow screens: sections sit behind the menu button, which names the current section.
   await page.setViewportSize({width:390,height:844});
   assert.ok(!(await page.locator('#sec-overview').isVisible()));
-  assert.equal((await page.locator('#nav-current').innerText()).trim(),'Impact & changes');
+  assert.equal((await page.locator('#nav-current').innerText()).trim(),'Impact & usage');
   await openTab('overview');assert.ok(!(await page.locator('#sec-overview').isVisible()));
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
   assert.deepEqual(errors,[]);

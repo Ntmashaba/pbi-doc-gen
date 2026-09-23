@@ -197,6 +197,15 @@ function visualFields(pageId,v){
   const unresolved=v.fields.filter(f=>f.field&&issues.has(`Unresolved report binding ${f.table||'?'}[${f.field}]`));
   return {measures:nodes.filter(n=>n.kind==='measure'),columns:nodes.filter(n=>n.kind==='column'),unresolved};
 }
+const layoutZooms=new Map();
+function zoomPageLayout(pageId,delta){
+ const zoom=delta===0?1:Math.max(.5,Math.min(3,(layoutZooms.get(pageId)||1)+delta));
+ layoutZooms.set(pageId,zoom);
+ const canvas=document.getElementById('layout-canvas-'+pageKey(pageId));
+ if(canvas)canvas.style.width=zoom*100+'%';
+ const label=document.getElementById('layout-zoom-'+pageKey(pageId));
+ if(label)label.textContent=Math.round(zoom*100)+'%';
+}
 function rLayout(){
   const legend=Object.entries(KIND_CLASS).map(([k,c])=>`<span><span class="dot ${c}"></span>${esc(k)}</span>`).join('');
   return `<h1>Page layout</h1><p class="sub">A schematic from saved visual positions, not rendered charts or live data. Boxes list the measures (Σ) and columns each visual uses; select one for its bindings and filters.</p>
@@ -204,18 +213,19 @@ function rLayout(){
     (scopedPages().map(p=>{
       const g=layoutGeometry(p);
       return `<div class="card"><h2>${esc(p.label||p.name)} ${p.hidden?'· hidden page':''}</h2>
-      ${g.placed.length?`<div class="page-canvas" style="aspect-ratio:${g.width}/${g.height}">${g.placed.map(v=>{
+      ${g.placed.length?`<div class="erd-toolbar layout-toolbar"><span class="mut">Select a shape for details. Zoom and scroll to read small visuals.</span><div class="erd-zoom" role="group" aria-label="Zoom ${esc(p.name)}"><button aria-label="Zoom out ${esc(p.name)}" onclick="${action('zoomPageLayout',p.id,-.25)}">−</button><output id="layout-zoom-${pageKey(p.id)}" aria-live="polite">${Math.round((layoutZooms.get(p.id)||1)*100)}%</output><button aria-label="Zoom in ${esc(p.name)}" onclick="${action('zoomPageLayout',p.id,.25)}">+</button><button onclick="${action('zoomPageLayout',p.id,0)}">Fit width</button></div></div><div class="layout-viewport" tabindex="0" role="region" aria-label="${esc(p.name)} visual layout"><div id="layout-canvas-${pageKey(p.id)}" class="page-canvas" style="width:${(layoutZooms.get(p.id)||1)*100}%;aspect-ratio:${g.width}/${g.height}">${g.placed.map(v=>{
         const f=visualFields(p.id,v), kind=visualKind(v);
         const names=[...f.measures.map(n=>'Σ '+n.name),...f.columns.map(n=>n.name)];
         const label=`${v.title||v.type} (${kind}${v.hidden?', hidden':''})${f.unresolved.length?`, ${f.unresolved.length} unresolved binding(s)`:''}`;
-        return `<button class="visual-box ${KIND_CLASS[kind]}${v.hidden?' hidden-visual':''}" style="left:${100*(v.x-g.left)/g.width}%;top:${100*(v.y-g.top)/g.height}%;width:${100*v.width/g.width}%;height:${100*v.height/g.height}%" title="${esc(label+(names.length?': '+names.join(', '):''))}" aria-label="${esc(label)}" onclick="${action('inspectVisual',p.id,v.id)}">
+        return `<button data-page-id="${esc(p.id)}" data-visual-id="${esc(v.id)}" aria-pressed="false" class="visual-box ${KIND_CLASS[kind]}${v.hidden?' hidden-visual':''}" style="left:${100*(v.x-g.left)/g.width}%;top:${100*(v.y-g.top)/g.height}%;width:${100*v.width/g.width}%;height:${100*v.height/g.height}%" title="${esc(label+(names.length?': '+names.join(', '):''))}" aria-label="${esc(label)}" onclick="${action('inspectVisual',p.id,v.id)}">
           <span class="vb-head">${f.unresolved.length?'<span class="badge b-warn">!</span> ':''}<b>${esc(v.title||v.type)}</b><small>${esc(v.type)}${v.hidden?' · hidden':''}</small></span>
-          <span class="vb-fields">${names.map(esc).join('<br>')}</span></button>`;}).join('')}</div>`:'<p class="mut">No visuals with usable coordinates.</p>'}
+          <span class="vb-fields">${names.map(esc).join('<br>')}</span></button>`;}).join('')}</div></div>`:'<p class="mut">No visuals with usable coordinates.</p>'}
       <details><summary>All visuals (${p.visuals.length}); ${g.unplaced.length} without usable coordinates</summary><div class="body">${p.visuals.map(v=>`<p><button class="xl" onclick="${action('inspectVisual',p.id,v.id)}">${esc(v.title||v.type)} [${esc(v.id)}]${v.hidden?' · hidden':''}</button></p>`).join('')}</div></details></div>`;
     }).join('')||'<p>No pages in this selection.</p>');
 }
 function inspectVisual(pageId,visualId){
   const p=R?.pages.find(p=>p.id===pageId), v=p?.visuals.find(v=>v.id===visualId);if(!v) return;
+  document.querySelectorAll('.visual-box').forEach(box=>box.setAttribute('aria-pressed',String(box.dataset.pageId===pageId&&box.dataset.visualId===visualId)));
   const roots=graph.consumers.filter(c=>c.pageId===pageId&&c.visualId===visualId);
   const unresolved=visualFields(pageId,v).unresolved;
   openInspector(v.title||v.type,`<p>${esc(p.label||p.name)} · ${esc(v.id)} · ${esc(v.type)}${v.hidden?' · hidden':''}</p>${unresolved.length?`<p><span class="badge b-warn">Unresolved</span> ${unresolved.map(f=>esc(`${f.table||'?'}[${f.field}]`)).join(', ')} could not be matched to the model, so usage for that table is uncertain.</p>`:''}<h3>Declared bindings</h3>
@@ -355,7 +365,7 @@ TABS.splice(2,0,
   {id:'impact',label:'Impact inspector',group:'Start',avail:has.model});
 TABS.splice(TABS.findIndex(t=>t.id==='filters'),0,{id:'layout',label:'Page layout',group:'Report',avail:has.report});
 TABS.push({id:'cleanup',label:'Cleanup review',group:'Quality',avail:has.model},
-  {id:'compare',label:'Compare extracts',group:'Quality',avail:true});
+  {id:'compare',label:'Compare extracts',group:'Quality',avail:true,hidden:true});
 Object.assign(RENDER,{matrix:rMatrix,impact:rImpact,layout:rLayout,cleanup:rCleanup,compare:rCompare});
 
 

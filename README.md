@@ -32,7 +32,7 @@ view is a tab inside one of them:
 | Overview | Overview |
 | Data & sources | Tables, Columns, Measures, Relationships, Lineage, Sources, Security |
 | Pages & visuals | Page layout, Pages, Filters, Field manifest |
-| Impact & changes | Impact inspector, Usage matrix, Usage, Compare extracts |
+| Impact & usage | Impact inspector, Usage matrix, Usage |
 | Review issues | Cleanup review, Warnings |
 | Report details | Report details |
 
@@ -85,7 +85,7 @@ while switching sections within the open document.
 | **Impact inspector** | What would a column or measure change affect? | Choose a field to see downstream calculations and explicit paths to page/visual bindings. Follow **Reads these fields** upstream to inspect source columns. |
 | **Page layout** | Which saved visual is using a field? | Select a visual in the schematic or its accessible list to inspect bindings and filters. Hidden pages/visuals are labelled. |
 | **Cleanup review** | Which columns warrant removal review, and why? | Start with **Deletion candidate**, inspect dependencies and uncertainty, and export evidence at column/page grain. |
-| **Compare extracts** | What changed between two extractions? | Open the newer HTML, select the earlier `--json` file, and inspect added, removed or changed definitions with affected pages. |
+| **Compare extracts (advanced, hidden from navigation)** | What changed between two extractions? | With a saved earlier `--json` file, open the newer HTML at `#compare`. Normal PBIX batch runs do not create per-report JSON extracts. |
 
 For example: select a page, open **Usage matrix**, expand a table and select a
 column's cell. Its evidence opens in a side panel. **Trace dependency paths**

@@ -3,7 +3,7 @@
 **Branch:** `ui-review-fixes`, created from `pbi-doc-gen-pbix-batch` (`29730a8`).
 **Last updated:** 23 September 2026, 19:35 SAST.
 
-> **Next:** the live test on real PBIX and PBIP files and what remains to do are in [`pbix-live-test-handover.md`](pbix-live-test-handover.md).
+> **Current status:** see [`pbix-live-test-handover.md`](pbix-live-test-handover.md) for the successful 8/8 Windows PBIX rerun, subsequent library/navigation/diagram changes, latest test results, and unresolved Browser Use access blocker. This document records the earlier review; its browser verification results do not cover those later changes.
 
 ## Status
 

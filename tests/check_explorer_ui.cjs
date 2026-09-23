@@ -43,9 +43,28 @@ browserWindow.location.hash='#overview';listeners.popstate();
 assert.equal(run('activeTab'),'overview');assert.equal(historyEntries.length,historyCount);
 browserWindow.location.hash='#does-not-exist';listeners.popstate();assert.equal(run('activeTab'),'overview');
 assert.match(node('nav').innerHTML,/href="pbi-home.html#reports"/);
+assert.ok(!run("sectionTabs(sectionOf('compare')).some(t=>t.id==='compare')"));
+assert.equal(run("sectionOf('impact').label"),'Impact & usage');
 // Every available view must render in every supported extraction mode.
 for(const tab of run('TABS.filter(t=>t.avail).map(t=>t.id)')) run(`switchTab(${JSON.stringify(tab)})`);
 if(!run('has.model&&has.report')){console.log('Available mode views rendered');process.exit(0);}
+// Lineage draws scoped paths once, and does not invent links for decorative pages.
+run("switchTab('lineage')");
+const lineageTable=run('lineageGraph().tables[0].name');
+run(`selectLineage('t',${JSON.stringify(lineageTable)})`);
+assert.ok(run('lineageSelection(lineageGraph()).st.every(e=>e.t===lineageFocus.key)'));
+assert.ok(run('lineageSelection(lineageGraph()).tp.every(e=>e.t===lineageFocus.key)'));
+assert.match(node('lineage-selection').innerHTML,/table details/);
+run('zoomLineage(10)');assert.equal(node('lineage-zoom-label').textContent,'250%');
+run('resetLineage()');assert.equal(node('lineage-zoom-label').textContent,'100%');
+run('savedLineage=L.lineage;L.lineage=[...L.lineage,...L.lineage]');
+assert.equal(run('lineageGraph().edgesST.length'),run('new Set(savedLineage.map(r=>JSON.stringify([r.sourceLabel||[r.sourceType,r.server,r.database].filter(Boolean).join(" · ")||"Unknown source",r.table]))).size'));
+run("L.lineage=savedLineage;savedTablePages=L.tablePages;L.tablePages=[];drawLineage()");
+assert.match(node('lineage-note').innerHTML,/No table-to-page connections detected/);
+assert.match(node('lineage-note').innerHTML,/does not mean a table is safe to delete/);
+assert.equal(run('lineageGraph().edgesTP.length'),0);
+assert.doesNotMatch(node('lineage-board').innerHTML,/var\(--none\)/);
+run('L.tablePages=savedTablePages;resetLineage()');
 // Relationship focus filters details, preserves connected nodes, and bounds zoom.
 run("switchTab('rels')");
 assert.match(node('erd').innerHTML,/role="button"/);

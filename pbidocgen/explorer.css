@@ -36,16 +36,30 @@ table.t thead th .xl:hover{text-decoration:underline}
 #inspector[hidden]{display:none}#inspector h3,#impact-details h3{margin-top:1.3rem}#inspector p{margin:.6rem 0}#inspector .code{white-space:pre-wrap;overflow-wrap:anywhere}
 .impact-paths{padding-left:1.4rem}.impact-paths li{margin:.8rem 0;padding:.6rem;background:var(--panel2);border-radius:6px}.path{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere;margin:.6rem 0}
 .page-canvas{position:relative;width:100%;background:var(--panel2);border:1px solid var(--line);margin:1rem 0;min-height:120px}
-.visual-box{position:absolute;overflow:hidden;border:1px solid var(--line);border-left:4px solid var(--other);border-radius:4px;background:var(--panel);padding:4px 6px;color:var(--ink);text-align:left;font:inherit;font-size:.75rem;line-height:1.3;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.visual-box{position:absolute;overflow:hidden;border:1px solid #8391a3;border-left:4px solid var(--other);border-radius:4px;background:var(--panel);padding:4px 6px;color:var(--ink);text-align:left;font:inherit;font-size:.75rem;line-height:1.3;cursor:pointer;display:flex;flex-direction:column;gap:2px}
 .vb-head b{font-weight:600}.vb-fields{color:var(--ink2);overflow:hidden}
 .vk-card{border-left-color:var(--viam);background:var(--viamBg)}.vk-slicer{border-left-color:var(--poss);background:var(--possBg)}.vk-table{border-left-color:var(--dim);background:var(--dimBg)}.vk-chart{border-left-color:var(--fact);background:var(--factBg)}.vk-text,.vk-other{border-left-color:var(--other);background:var(--otherBg)}
 .dot.vk-card{background:var(--viam)}.dot.vk-slicer{background:var(--poss)}.dot.vk-table{background:var(--dim)}.dot.vk-chart{background:var(--fact)}.dot.vk-text,.dot.vk-other{background:var(--other)}
 .mea-preview{flex-basis:100%;font-family:var(--mono);font-size:.75rem;font-weight:400;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:1.1rem}
 .mea-group h2 .mut{font-weight:400}
 .tag-page{font-size:.75rem;background:var(--otherBg);border-radius:99px;padding:.05rem .5rem;white-space:nowrap}
-.source-list tbody th .xl{font-weight:600}.source-list tbody th .mut{font-weight:400;overflow-wrap:anywhere}.visual-box:hover,.visual-box:focus{outline:2px solid var(--pbi);z-index:2}.visual-box small{display:block;color:var(--ink3)}.hidden-visual{border-style:dashed;opacity:.8}
+.source-list tbody th .xl{font-weight:600}.source-list tbody th .mut{font-weight:400;overflow-wrap:anywhere}.visual-box:hover,.visual-box:focus{outline:2px solid var(--pbi);z-index:2}.visual-box small{display:block;color:var(--ink3)}.hidden-visual{border-style:dashed;border-color:#61748a}
 button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #547bba;outline-offset:2px}
 @media(max-width:800px){.scope-bar{position:static}.scope-page{flex:1 1 100%}.scope-bar select{max-width:none;flex:1}.subtabs{flex-wrap:nowrap;overflow-x:auto}.matrix th:first-child{min-width:150px}}
 @media print{.scope-bar,.subtabs,#inspector{display:none}}
 
 .column-inventory td:nth-child(1){width:11rem}.column-inventory td:nth-child(2){min-width:9rem}.column-inventory td:nth-child(5){width:40%}
+
+/* Visual schematics: retain all shapes at full contrast, including hidden visuals. */
+.layout-viewport{overflow:auto;max-height:75vh;border:1px solid #a7b4c4;background:#f5f8fc;margin-bottom:16px}
+.layout-viewport .page-canvas{margin:0;border:0;max-width:none}
+.layout-toolbar{padding:12px 0;border:0}
+.visual-box{border-width:2px;border-color:#61748a;border-left-width:4px;font-size:13px;padding:6px 8px}
+.visual-box .vb-head b{font-size:14px}.visual-box small{color:#4f5b67}.vb-fields{color:#344459}
+.visual-box:hover,.visual-box:focus-visible{outline:2px solid #203b5a;outline-offset:-2px;z-index:2}
+.visual-box[aria-pressed="true"]{border-color:#203b5a;box-shadow:inset 0 0 0 2px #203b5a;z-index:1}
+.hidden-visual{border-style:dashed;opacity:1}
+@media(min-width:1200px){body:has(#inspector:not([hidden])) .layout{margin-right:400px}#inspector{width:400px}}
+@media print{.layout-toolbar{display:none}.layout-viewport{overflow:visible;max-height:none}body:has(#inspector:not([hidden])) .layout{margin-right:0}}
+
+.visual-box.vk-card{border-left-color:#0e7490}.visual-box.vk-slicer{border-left-color:#a04a07}.visual-box.vk-table{border-left-color:#0f766e}.visual-box.vk-chart{border-left-color:#3b4a9f}

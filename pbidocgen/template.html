@@ -120,7 +120,7 @@ svg text{font-family:var(--sans)}
 .erd-toolbar select{max-width:260px}.erd-toolbar button:hover{background:var(--panel2)}
 .erd-zoom{display:flex;align-items:center;gap:8px}.erd-zoom output{min-width:48px;text-align:center;font-size:13px;font-variant-numeric:tabular-nums}
 .erd-viewport{overflow:auto;max-height:70vh;min-height:240px;background-color:#fafcfe;background-image:radial-gradient(#d5dfeb .8px,transparent .8px);background-size:20px 20px}
-#erd{width:max-content;min-width:100%;text-align:center}#erd svg{display:block;margin:auto}
+#erd,#lineage-board{width:max-content;min-width:100%;text-align:center}#erd svg,#lineage-board svg{display:block;margin:auto}
 .erd-node{cursor:pointer}.erd-node:hover rect,.erd-node:focus rect{stroke:#172434;stroke-width:3}.erd-node:focus{outline:none}
 .erd-selection{padding:14px 20px;border-top:1px solid var(--line);font-size:13px}.erd-selection p{margin-top:8px}
 .erd-legend{padding:0 20px 16px;margin:0}.erd-line{display:inline-block;width:26px;border-top:2px solid #526b87}.erd-line.inactive{border-top-style:dashed}.erd-line.both{border-color:var(--warn)}
@@ -220,13 +220,13 @@ const SECTIONS = [
   {id:"overview", label:"Overview",         tabs:["overview"]},
   {id:"data",     label:"Data & sources",   tabs:["tables","columns","measures","rels","lineage","sources","security"]},
   {id:"visuals",  label:"Pages & visuals",  tabs:["layout","pages","filters","manifest"]},
-  {id:"changes",  label:"Impact & changes", tabs:["impact","matrix","usage","compare"]},
+  {id:"changes",  label:"Impact & usage", tabs:["impact","matrix","usage","compare"]},
   {id:"review",   label:"Review issues",    tabs:["cleanup","warnings"]},
   {id:"details",  label:"Report details",   tabs:["report-details"]},
 ];
 const lastTabInSection = {};
 const sectionOf = id => SECTIONS.find(s=>s.tabs.includes(id)) || SECTIONS[1];
-const sectionTabs = s => TABS.filter(t=>sectionOf(t.id)===s)
+const sectionTabs = s => TABS.filter(t=>!t.hidden && sectionOf(t.id)===s)
   .sort((a,b)=>s.tabs.indexOf(a.id)-s.tabs.indexOf(b.id));
 function openSection(sid){
   const s = SECTIONS.find(x=>x.id===sid);
@@ -441,64 +441,67 @@ function rQualityOverview(warnCount){
 }
 
 /* ============================================================ lineage */
+let lineageZoom=1, lineageFocus=null;
+function lineageGraph(){
+ const srcKey=r=>r.sourceLabel||[r.sourceType,r.server,r.database].filter(Boolean).join(' · ')||'Unknown source';
+ const tables=scopedTables().map(t=>({name:t.name,usage:usageOf(t.name),type:t.tableType}));
+ const pages=scopedPages(),names=new Set(tables.map(t=>t.name)),pageIds=new Set(pages.map(p=>p.id));
+ const rows=L.lineage.filter(r=>names.has(r.table));
+ const sources=[...new Map(rows.map(r=>[srcKey(r),{key:srcKey(r)}])).values()];
+ const unique=rows=>[...new Map(rows.map(r=>[JSON.stringify(r),r])).values()];
+ const edgesST=unique(rows.map(r=>({s:srcKey(r),t:r.table})));
+ const edgesTP=unique((L.tablePages||[]).filter(r=>r.pageId&&names.has(r.table)&&pageIds.has(r.pageId)).map(r=>({t:r.table,p:r.pageId})));
+ return {sources,tables,pages,edgesST,edgesTP};
+}
 function rLineage(){
-  return `${coupler()}<h1>Lineage</h1>
-  <p class="sub">Source systems → model tables → report pages. Click any node to highlight its paths; click a table node twice to jump to its detail.</p>
-  <div class="legend">
-    <span><span class="dot" style="background:var(--direct)"></span>direct</span>
-    <span><span class="dot" style="background:var(--viam)"></span>via measures</span>
-    <span><span class="dot" style="background:var(--poss)"></span>possible</span>
-    <span><span class="dot" style="background:var(--none)"></span>no references</span>
-  </div>
-  <div class="card" style="overflow-x:auto"><div id="lineage-board"></div></div>`;
+ lineageFocus=null;
+ return `${coupler()}<h1>Lineage</h1><p class="sub" style="margin-bottom:16px">Follow the detected paths from sources to tables and report pages. Select a node to highlight its paths.</p>
+ <div id="lineage-note" class="card"></div>
+ <div class="card erd-card"><div class="erd-toolbar"><span class="mut">Sources → model tables → report pages</span><div class="erd-zoom" role="group" aria-label="Lineage zoom"><button aria-label="Zoom lineage out" onclick="zoomLineage(-.25)">−</button><output id="lineage-zoom-label" aria-live="polite">${Math.round(lineageZoom*100)}%</output><button aria-label="Zoom lineage in" onclick="zoomLineage(.25)">+</button><button onclick="resetLineage()">Reset view</button></div></div>
+ <div id="lineage-viewport" class="erd-viewport" tabindex="0" role="region" aria-label="Lineage diagram; scroll to explore"><div id="lineage-board"></div></div>
+ <div id="lineage-selection" class="erd-selection" role="status"></div>
+ <div class="legend erd-legend"><span><span class="dot" style="background:var(--direct)"></span>Direct</span><span><span class="dot" style="background:var(--viam)"></span>Via measures</span><span><span class="dot" style="background:var(--poss)"></span>Possible</span><span><span class="dot" style="background:#8391a3"></span>No references detected</span></div></div>`;
+}
+function zoomLineage(delta){lineageZoom=Math.max(.5,Math.min(2.5,lineageZoom+delta));drawLineage();}
+function resetLineage(){lineageZoom=1;lineageFocus=null;drawLineage();const v=document.getElementById('lineage-viewport');v.scrollTop=0;v.scrollLeft=0;}
+function selectLineage(col,key){lineageFocus=lineageFocus?.col===col&&lineageFocus.key===key?null:{col,key};drawLineage();}
+function lineageSelection(g){
+ const f=lineageFocus;
+ const tables=new Set(!f?g.tables.map(t=>t.name):f.col==='t'?[f.key]:f.col==='s'?g.edgesST.filter(e=>e.s===f.key).map(e=>e.t):g.edgesTP.filter(e=>e.p===f.key).map(e=>e.t));
+ const st=g.edgesST.filter(e=>tables.has(e.t)&&(!f||f.col!=='s'||e.s===f.key));
+ const tp=g.edgesTP.filter(e=>tables.has(e.t)&&(!f||f.col!=='p'||e.p===f.key));
+ return {tables,st,tp,sources:new Set(st.map(e=>e.s)),pages:new Set(tp.map(e=>e.p))};
 }
 function drawLineage(){
-  const board = document.getElementById("lineage-board");
-  if(!board) return;
-  // group lineage rows into source nodes, table nodes, page nodes
-  const srcKey = r => r.sourceLabel || [r.sourceType, r.server, r.database].filter(Boolean).join(" · ") || r.sourceType;
-  const sources = [...new Map(L.lineage.filter(r=>tableInScope(r.table)).map(r=>[srcKey(r), {key:srcKey(r), type:r.sourceType}])).values()];
-  const tables = scopedTables().map(t=>({name:t.name, usage:usageOf(t.name), type:t.tableType}));
-  const pages = scopedPages();
-  const edgesST = L.lineage.map(r=>({s:srcKey(r), t:r.table}));
-  const edgesTP = (L.tablePages||[]).filter(r=>r.pageId).map(r=>({t:r.table,p:r.pageId}));
-
-  const rowH = 34, colW = 300, pad = 14;
-  const H = Math.max(sources.length, tables.length, pages.length)*rowH + pad*2;
-  const yOf = (i,n) => pad + i*rowH + rowH/2 + (H-pad*2-n*rowH)/2;
-  const uColor = u => ({direct:"var(--direct)","via measures":"var(--viam)",possible:"var(--poss)",none:"var(--none)"}[u]||"var(--other)");
-  const nodeId = (col,name)=>`ln-${col}-${slug(name)}`;
-  let svg = `<svg width="${colW*3}" height="${H}" viewBox="0 0 ${colW*3} ${H}" xmlns="http://www.w3.org/2000/svg" font-size="12">`;
-  // edges
-  const edge = (x1,y1,x2,y2,cls)=>`<path class="${cls}" d="M${x1},${y1} C${x1+70},${y1} ${x2-70},${y2} ${x2},${y2}" fill="none" stroke="var(--line)" stroke-width="1.4"/>`;
-  edgesST.forEach(e=>{
-    const si=sources.findIndex(s=>s.key===e.s), ti=tables.findIndex(t=>t.name===e.t);
-    if(si<0||ti<0) return;
-    svg += edge(258, yOf(si,sources.length), colW+8, yOf(ti,tables.length), `e-s-${slug(e.s)} e-t-${slug(e.t)}`);
-  });
-  edgesTP.forEach(e=>{
-    const ti=tables.findIndex(t=>t.name===e.t), pi=pages.findIndex(p=>p.id===e.p);
-    if(ti<0||pi<0) return;
-    svg += edge(colW+206, yOf(ti,tables.length), colW*2+8, yOf(pi,pages.length), `e-t-${slug(e.t)} e-p-${pageKey(e.p)}`);
-  });
-  // nodes
-  // Source labels end with the file or database name, so shorten them in the middle.
-  const fit = (label,max,middle)=>label.length<=max?label:middle?label.slice(0,Math.ceil(max/2)-1)+"…"+label.slice(-Math.floor(max/2)):label.slice(0,max-1)+"…";
-  const node = (x,y,w,label,fill,stroke,id,extra="",max=30,middle=false)=>`<g class="lin-node" id="${id}" ${extra}><title>${esc(label)}</title><rect x="${x}" y="${y-12}" width="${w}" height="24" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/><text x="${x+8}" y="${y+4}" fill="var(--ink)">${esc(fit(label,max,middle))}</text></g>`;
-  sources.forEach((s,i)=>{ svg += node(8, yOf(i,sources.length), 250, s.key, "var(--panel2)", "var(--line)", nodeId("s",s.key), `onclick="linHl('s','${slug(s.key)}')"`, 38, true); });
-  tables.forEach((t,i)=>{ svg += node(colW+8, yOf(i,tables.length), 198, t.name, "#fff", uColor(t.usage), nodeId("t",t.name), `onclick="${action('linHl','t',slug(t.name),t.name)}"`); });
-  pages.forEach((p,i)=>{ svg += node(colW*2+8, yOf(i,pages.length), 198, `${p.name} [${p.id}]`, "var(--panel2)", "var(--line)", 'ln-p-'+pageKey(p.id), `onclick="linHl('p','${pageKey(p.id)}')"`); });
-  ["Sources","Model tables","Report pages"].forEach((h,i)=>{ svg += `<text x="${i*colW+8}" y="${12}" font-size="12" font-weight="600" fill="var(--ink2)">${h}</text>`; });
-  svg += "</svg>";
-  board.innerHTML = svg;
-}
-let _linLast = null;
-function linHl(col, key, tableName){
-  const board = document.getElementById("lineage-board");
-  if(_linLast === col+key && col==="t" && tableName){ goTable(tableName); return; }
-  _linLast = col+key;
-  board.querySelectorAll("path").forEach(p=>{ p.setAttribute("stroke","var(--line)"); p.setAttribute("stroke-width","1.4"); });
-  board.querySelectorAll(`.e-${col}-${key}`).forEach(p=>{ p.setAttribute("stroke","var(--pbi)"); p.setAttribute("stroke-width","2.6"); p.parentNode.appendChild(p); });
+ const board=document.getElementById('lineage-board');if(!board)return;
+ const g=lineageGraph(),selected=lineageSelection(g),{sources,tables,pages,edgesST,edgesTP}=g;
+ const disconnected=pages.filter(p=>!edgesTP.some(e=>e.p===p.id));
+ const note=document.getElementById('lineage-note');
+ note.innerHTML=disconnected.length?`<strong>${edgesTP.length?'Some pages have no detected table connections.':'No table-to-page connections detected.'}</strong><p class="mut" style="margin-top:6px">${disconnected.map(p=>{const types=[...new Set((p.visuals||[]).map(v=>v.type))];return `${esc(p.name)}: ${types.length?'contains '+types.map(esc).join(' and '):'no visuals found'}; no table usage was detected on this page.`;}).join('<br>')}</p><p class="mut" style="margin-top:6px">Source-to-table lines describe model inputs. No references detected does not mean a table is safe to delete.${(DATA.columns?.issues||[]).length?' Analysis coverage is limited; review the analysis issues for details.':''}</p>`:'<span class="mut">Connections show detected usage for the selected report scope. Possible usage is not proof of runtime use.</span>';
+ const boxW=280,boxH=68,rowH=94,pad=28;
+ const W=Math.max(1140,document.getElementById('lineage-viewport').clientWidth||0),colW=(W-pad*2-boxW)/2;
+ const H=Math.max(1,sources.length,tables.length,pages.length)*rowH+100;
+ const yOf=(i,n)=>70+i*rowH+(H-100-n*rowH)/2;
+ const color=u=>({direct:'var(--direct)','via measures':'var(--viam)',possible:'var(--poss)',none:'#8391a3'}[u]||'#8391a3');
+ let svg=`<svg width="${W*lineageZoom}" height="${H*lineageZoom}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Source to table to page lineage" font-size="15">`;
+ const edge=(col,y1,y2,on)=>{const x1=pad+col*colW+boxW,x2=pad+(col+1)*colW;return `<path d="M${x1},${y1+boxH/2} C${(x1+x2)/2},${y1+boxH/2} ${(x1+x2)/2},${y2+boxH/2} ${x2},${y2+boxH/2}" fill="none" stroke="${lineageFocus&&on?'#246a85':'#8397af'}" stroke-width="${lineageFocus&&on?3:2}" opacity="${!lineageFocus||on?1:.35}"/>`;};
+ edgesST.forEach(e=>{svg+=edge(0,yOf(sources.findIndex(s=>s.key===e.s),sources.length),yOf(tables.findIndex(t=>t.name===e.t),tables.length),selected.st.includes(e));});
+ edgesTP.forEach(e=>{svg+=edge(1,yOf(tables.findIndex(t=>t.name===e.t),tables.length),yOf(pages.findIndex(p=>p.id===e.p),pages.length),selected.tp.includes(e));});
+ const shorten=(t,n)=>t.length>n?t.slice(0,n-1)+'…':t;
+ const node=(col,index,total,label,subtitle,key,stroke,on)=>{
+  const x=pad+col*colW,y=yOf(index,total),kind=['s','t','p'][col];
+  const focused=lineageFocus?.col===kind&&lineageFocus.key===key,click=action('selectLineage',kind,key);
+  return `<g class="erd-node" id="ln-${kind}-${kind==='p'?pageKey(key):slug(key)}" role="button" tabindex="0" aria-label="${esc(label)}" aria-pressed="${focused}" onclick="${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click}}" opacity="1"><title>${esc(label)} · ${esc(subtitle)}</title><rect x="${x}" y="${y}" width="${boxW}" height="${boxH}" rx="10" fill="${focused?'#dcecf8':col===0?'#edf4fc':col===2?'#eaf5f2':'#fff'}" stroke="${stroke}" stroke-width="${focused?3:2}"/><text x="${x+14}" y="${y+27}" fill="var(--ink)" font-weight="600">${esc(shorten(label,31))}</text><text x="${x+14}" y="${y+49}" fill="var(--ink2)" font-size="12">${esc(shorten(subtitle,39))}</text></g>`;
+ };
+ sources.forEach((s,i)=>{const split=s.key.indexOf(' · ');svg+=node(0,i,sources.length,split<0?s.key:s.key.slice(0,split),split<0?'Source':s.key.slice(split+3),s.key,'#526b87',selected.sources.has(s.key));});
+ tables.forEach((t,i)=>svg+=node(1,i,tables.length,t.name,t.usage==='none'?'No references detected':t.usage||'Usage unknown',t.name,color(t.usage),selected.tables.has(t.name)));
+ pages.forEach((p,i)=>svg+=node(2,i,pages.length,pages.filter(other=>other.name===p.name).length>1?`${p.name} [${p.id}]`:p.name,edgesTP.some(e=>e.p===p.id)?'Detected table usage':'No table usage detected',p.id,'#417766',selected.pages.has(p.id)));
+ ['Sources','Model tables','Report pages'].forEach((h,i)=>svg+=`<text x="${pad+i*colW}" y="32" fill="var(--ink2)" font-weight="600">${h}</text>`);
+ board.innerHTML=svg+'</svg>';
+ const f=lineageFocus;
+ const label=!f?'':f.col==='p'?pages.find(p=>p.id===f.key)?.name||f.key:f.key;
+ document.getElementById('lineage-selection').innerHTML=f?`<strong>${esc(label)}</strong>${f.col==='t'?' · '+tblLink(f.key)+' <span class="mut">(table details)</span>':''}<p class="mut">${selected.st.length} source-to-table connections · ${selected.tp.length} table-to-page connections</p>`:'Select a source, table or page to highlight its paths. Full names appear here when selected.';
+ document.getElementById('lineage-zoom-label').textContent=Math.round(lineageZoom*100)+'%';
 }
 
 /* ============================================================ usage */
@@ -782,7 +785,7 @@ function drawERD(){
   const bend=same?Math.min(baseW-8,x1+30+(i%3)*8):(x1+x2)/2;
   const path=r.fromTable===r.toTable?`M${x1},${y1-14} C${bend},${y1-40} ${bend},${y1+40} ${x2},${y2+14}`:`M${x1},${y1} C${bend},${y1} ${bend},${y2} ${x2},${y2}`;
   const stroke=r.crossFilteringBehavior==='bothDirections'?'var(--warn)':'#526b87';
-  svg+=`<g opacity="${selected?1:.12}"><title>${esc(r.fromTable)}[${esc(r.fromColumn)}] → ${esc(r.toTable)}[${esc(r.toColumn)}] · ${r.isActive?'active':'inactive'}</title><path d="${path}" fill="none" stroke="${stroke}" stroke-width="${erdFocus&&selected?3:2}" ${r.isActive?'':'stroke-dasharray="8 6"'}/>`;
+  svg+=`<g opacity="${selected?1:.35}"><title>${esc(r.fromTable)}[${esc(r.fromColumn)}] → ${esc(r.toTable)}[${esc(r.toColumn)}] · ${r.isActive?'active':'inactive'}</title><path d="${path}" fill="none" stroke="${stroke}" stroke-width="${erdFocus&&selected?3:2}" ${r.isActive?'':'stroke-dasharray="8 6"'}/>`;
   if(!same)svg+=`<text x="${x1+(right?12:-12)}" y="${y1-8}" text-anchor="middle" fill="${stroke}" font-weight="700">${cardinality(r.fromCardinality)}</text><text x="${x2+(right?-12:12)}" y="${y2-8}" text-anchor="middle" fill="${stroke}" font-weight="700">${cardinality(r.toCardinality)}</text>`;
   svg+='</g>';
  }
@@ -791,7 +794,7 @@ function drawERD(){
   const t=M.tables.find(t=>t.name===name),[fill,stroke]=colors[t.tableType]||['#edf2f7','#61748a'];
   const selected=name===erdFocus,label=name.length>27?name.slice(0,26)+'…':name;
   const activate=action('focusERD',name);
-  svg+=`<g class="erd-node" tabindex="0" role="button" aria-label="Focus ${esc(name)}" aria-pressed="${selected}" onclick="${activate}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${activate}}" opacity="${!erdFocus||related.has(name)?1:.3}"><title>${esc(name)} · ${esc(t.tableType)}</title><rect x="${p.x}" y="${p.y}" width="${boxW}" height="${boxH}" rx="10" fill="${fill}" stroke="${selected?'#172434':stroke}" stroke-width="${selected?3:1.5}"/><text x="${p.x+16}" y="${p.y+27}" fill="#1c2430" font-weight="650">${esc(label)}</text><text x="${p.x+16}" y="${p.y+48}" fill="#4f5b67" font-size="12">${esc(t.tableType||'Table')}</text></g>`;
+  svg+=`<g class="erd-node" tabindex="0" role="button" aria-label="Focus ${esc(name)}" aria-pressed="${selected}" onclick="${activate}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${activate}}" opacity="1"><title>${esc(name)} · ${esc(t.tableType)}</title><rect x="${p.x}" y="${p.y}" width="${boxW}" height="${boxH}" rx="10" fill="${fill}" stroke="${selected?'#172434':stroke}" stroke-width="${selected?3:2}"/><text x="${p.x+16}" y="${p.y+27}" fill="#1c2430" font-weight="650">${esc(label)}</text><text x="${p.x+16}" y="${p.y+48}" fill="#4f5b67" font-size="12">${esc(t.tableType||'Table')}</text></g>`;
  }
  svg+='</svg>';
  host.innerHTML=cols.length?svg:'<div class="empty">No relationships in this model.</div>';

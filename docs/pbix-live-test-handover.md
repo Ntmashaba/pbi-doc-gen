@@ -1,6 +1,7 @@
 # Live test on real PBIX and PBIP files: handover
 
 **Branch:** `ui-review-fixes`. **Written:** 23 September 2026, 20:00 SAST.
+**Updated:** 23 September 2026, after the successful Windows rerun and subsequent usability changes.
 **Follows:** [`ui-review-handover.md`](ui-review-handover.md), which covers the UI review; everything in it is done.
 
 ## Summary
@@ -9,7 +10,60 @@ The generator was run for the first time on real Power BI files: 8 PBIX files fr
 
 The biggest finding affects PBIP projects too: **the report validator rejected `report.json` files saved by any recent Power BI Desktop**, so the report was silently dropped and the whole cleanup review blocked. It hit 4 of the 9 real PBIP projects. Nothing in the existing tests used a recent Desktop file, so it had never shown up.
 
-This commit fixes the 16 problems listed below and adds a regression test for each. 134 unit tests, both Chromium tests and the jsdom check pass. **The PBIX batch still needs rerunning on Windows** to confirm all eight now generate (see "What needs to be done").
+The original live-test commit (`ed82237`) fixes the 16 problems listed below. Its handover reported 134 unit tests, both Chromium tests and the jsdom check passing. **The Windows PBIX rerun is now complete: 8 generated, 0 failed, all in combined mode.** Later UI changes and their distinct validation limits are recorded below; the earlier browser results do not validate the latest UI.
+
+## Current handover: usability and diagram work
+
+### Confirmed Windows rerun
+
+The user reran the batch successfully. `pbix-samples/documentation/pbix-batch-results.json` records **8 generated, 0 failed**, all in combined mode, at **23 September 2026, 20:21 SAST** (`18:21 UTC`). Regional Sales and Revenue Opportunities no longer fail on model-name validation. The precise original offending field for F4 remains unconfirmed. Generation success is not a full semantic audit of every warning or cleanup candidate.
+
+```powershell
+python generate_docs.py --pbix-folder pbix-samples --output-dir pbix-samples\documentation --pbi-tools pbi-tools\pbi-tools.exe
+```
+
+### User feedback and implemented changes
+
+The user wants a connected, modern application experience. They objected to reports being below an expanded source table, links opening new tabs, small/faint diagram shapes, and the details panel obscuring Page layout. They like the Page layout schematic and want to retain it.
+
+- **Library:** reports/search are the initial view. Sources and Manage library have separate sidebar destinations. Report links stay in the same tab. File and connection metadata is tucked into expandable card details. The library and reports share a dark sidebar and consistent card styling.
+- **Navigation:** reports include a library return link and breadcrumbs. Report sections have hash routes with Back/Forward handling. These remain self-contained offline HTML documents; this is not a server-backed application.
+- **Relationships:** larger cards and labels, zoom/reset controls, scrolling, cardinality labels, table focus, and a relationship list filtered to the selected table. Bidirectional lines now receive the intended amber stroke. Same-column and self relationships have curved routes.
+- **Lineage:** larger source/table/page cards, zoom/reset, source and page fills with stronger outlines, deduplicated edges, and path selection. Shapes remain fully opaque during selection; only unrelated lines are dimmed. Table details use an explicit link instead of a second click on the same node.
+- **Lineage explanation:** Adventure Works DW 2020's only page, Introduction, contains an image and a textbox with no field bindings. Its missing table-to-page connections are expected. No-reference outlines are neutral rather than red; disconnected pages get explanatory text and a reminder that missing references do not establish safe deletion.
+- **Page layout:** stronger borders, larger labels, per-page zoom and Fit width, scrollable canvases, and selected-shape indication. Hidden visuals retain full opacity and dashed outlines. At viewport widths of at least 1200px, the 400px details panel has space reserved beside the document; on smaller screens it remains an overlay.
+- **Compare extracts:** hidden from normal navigation at the user's request. The section is now **Impact & usage**. Comparison code and the advanced `#compare` route remain. The single-report CLI supports `--json`, but the normal PBIX batch does not produce per-report JSON extracts; `pbix-batch-results.json` is only the batch status, not a comparison baseline. Do not reintroduce the tab without a usable version-history workflow.
+
+**The generator was updated, not just generated files.** Relevant files are `pbidocgen/catalog.html`, `pbidocgen/template.html`, `pbidocgen/explorer.js`, and `pbidocgen/explorer.css`. Navigation documentation is in `README.md`. All eight local sample HTML reports were refreshed with `renderer.render_html` using their existing embedded payloads and saved metadata, followed by `build_catalog`. Their analysis was preserved; these UI refreshes did not repeat PBIX extraction. Future normal generation uses the updated templates.
+
+### Verification and its limits
+
+- Latest full run: `python -X utf8 -m unittest discover -s tests -q`: **134 discovered, 133 passed, 1 skipped**. The skipped case uses a POSIX synthetic pbi-tools executable and is intentionally skipped on Windows.
+- After hiding Compare extracts, the targeted `test_explorer.py` suite passed (4 tests, with generated JavaScript checks across extraction modes). `tests/browser_review.cjs` was adjusted to exercise comparison through its advanced route and to expect the renamed section, but was not run in a browser in this session.
+- `tests/check_diagrams.cjs` checks the generated diagrams with a DOM adapter. Across the eight real report HTML files, **936 diagram states** passed: shape counts and bounds, finite coordinates, readable nominal node dimensions, opaque selectable nodes, edge-before-node ordering, focus states, and zoom extremes. Page-layout inventory/bounds and zoom controls were checked too. The check is also called from `tests/test_explorer.py` for synthetic extraction modes.
+- Actual report state counts: Adventure Works DW 2020 34; AdventureWorks Sales 46; Corporate Spend 73; Performance Analyzer 83; Regional Sales 185; Revenue Opportunities 68; Sales & Returns 379; Supply Chain 68.
+- These are structural/JavaScript checks, **not rendered browser or screenshot verification**. They cannot prove text fit, perceived contrast, browser layout, hit targets, or inspector reflow. Latest Chromium/jsdom integration runs remain pending. Do not describe the UI as visually verified.
+- Use `-X utf8` on Windows: some existing tests read UTF-8 files without specifying an encoding and otherwise fail under cp1252. `tests/run_ci.py` rejects any skipped test, so its strict gate exits nonzero on this Windows environment despite the passing applicable tests.
+- `git diff --check` passed. At handover, HEAD was `8f3a31c` (`ui fixes`), with additional staged and unstaged changes. Preserve the user's staging choices; no commit or staging was performed for this handover update.
+
+Example local diagram check (after generating reports):
+
+```powershell
+Get-ChildItem pbix-samples/documentation -Filter '*.html' |
+  Where-Object { $_.Name -ne 'pbi-home.html' } |
+  ForEach-Object {
+    node tests/check_diagrams.cjs $_.FullName
+    if ($LASTEXITCODE -ne 0) { throw "Diagram audit failed: $($_.Name)" }
+  }
+```
+
+### Browser-access blocker
+
+Repeated direct attempts to open `file:///D:/GIT/pbi-doc-gen/pbix-samples/documentation/pbi-home.html` through the Codex in-app Browser Use tool were rejected with **“The browser URL policy blocks this action.”** Expanding filesystem access did not resolve it. No successful automated visual walkthrough occurred.
+
+The user supplied settings screenshots: Browser control is enabled; default Agent permissions require approval; the Add site permission dialog requests a website address. Official documentation describes origin rules for HTTP/HTTPS, not a supported `file://` exception. No browser restriction was present in the inspected user `config.toml`. The exact policy source remains unknown. Do not claim that a specific toggle fixes this, enable full CDP access, or route around the explicit tool denial. The user was advised to report the rejection through `/feedback`; submission was not confirmed.
+
+References: [Browser](https://learn.chatgpt.com/docs/browser), [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference). User screenshots supported the UI review while browser access was unavailable. Some screenshots still showed the older Lineage text/layout; ask the user to reload the generated file before diagnosing a stale view as a new code failure.
 
 ## What was tested
 
@@ -22,16 +76,16 @@ The PBIX files live in `pbix-samples/` on the developer's machine only (git-igno
 
 ## PBIX results
 
-| File | First run | Cause | Status after this commit |
+| File | First run | Cause | Status after Windows rerun |
 |---|---|---|---|
 | Adventure Works DW 2020 | Generated | (none; image and text-box report only) | No change needed |
-| Performance Analyzer export | Generated, 10 false DAX issues, no cleanup | F9 (row-context DAX) | Fixed; needs rerun to confirm |
-| Sales & Returns | Generated, 801 "bookmarks", 6 false broken bindings | F7, F8, F10 | Fixed; needs rerun to confirm |
+| Performance Analyzer export | Generated, 10 false DAX issues, no cleanup | F9 (row-context DAX) | Generated successfully; detailed warning/content verification still pending |
+| Sales & Returns | Generated, 801 "bookmarks", 6 false broken bindings | F7, F8, F10 | Generated successfully; detailed warning/content verification still pending |
 | Supply Chain | Generated | 1 real stale reference (see "Real findings") | No change needed |
-| AdventureWorks Sales (2026) | **Failed**: "Missing or invalid report object: report.json" | F3: report is PBIR inside the PBIX, which pbi-tools 1.2 does not extract | Fixed; needs rerun to confirm |
-| Corporate Spend (2026) | **Failed**: same | F3 | Fixed; needs rerun to confirm |
-| Revenue Opportunities (2026) | **Failed**: "Model name must be text" | F4 (and F3 once past it) | Probably fixed; **cause not confirmed** |
-| Regional Sales Sample (2026) | **Failed**: "Model name must be text" | F4 | Probably fixed; **cause not confirmed** |
+| AdventureWorks Sales (2026) | **Failed**: "Missing or invalid report object: report.json" | F3: report is PBIR inside the PBIX, which pbi-tools 1.2 does not extract | Generated successfully; detailed warning/content verification still pending |
+| Corporate Spend (2026) | **Failed**: same | F3 | Generated successfully; detailed warning/content verification still pending |
+| Revenue Opportunities (2026) | **Failed**: "Model name must be text" | F4 (and F3 once past it) | Generated successfully; exact original F4 cause remains unconfirmed |
+| Regional Sales Sample (2026) | **Failed**: "Model name must be text" | F4 | Generated successfully; exact original F4 cause remains unconfirmed |
 
 Reading the PBIR reports straight out of the three 2026 PBIX files now gives 1, 3 and 3 pages with 17, 20 and 12 visuals, and no warnings.
 
@@ -90,15 +144,7 @@ These are genuine problems in the sample files, correctly reported:
 
 In priority order.
 
-1. **Rerun the PBIX batch** on Windows and confirm 8 of 8 generate:
-   ```powershell
-   python generate_docs.py --pbix-folder pbix-samples --output-dir pbix-samples\documentation --pbi-tools pbi-tools\pbi-tools.exe
-   ```
-   If Regional Sales or Revenue Opportunities still fail with "Model name must be text", keep pbi-tools' output and look at `Model\database.json` for a non-text `name`:
-   ```powershell
-   & pbi-tools\pbi-tools.exe extract "pbix-samples\Regional Sales Sample.pbix" -extractFolder "pbix-samples\extract\regional" -modelSerialization Raw
-   ```
-   Consider adding a `--keep-extract` option to the batch, so failures can be diagnosed without a second run.
+1. **Complete a rendered UI review once permitted browser access is available.** The PBIX rerun is done. Check Corporate Spend and the other samples in Lineage, Relationships, and Page layout: every source/page/table shape remains visible, labels fit, selection is clear, zoom/scroll works, and the details panel does not obscure content on wide screens. Include keyboard and narrow-screen checks. Retain the Page layout design the user likes. Separately audit report contents/warning counts after the successful rerun; generation alone does not establish their correctness. A future `--keep-extract` option would still help diagnose extraction failures.
 2. **Decide the legacy-layout policy.** Every report in the legacy layout (all pre-2025 PBIX files, and PBIP projects saved before PBIR) carries a caution that keeps every column and measure in Review, so their cleanup review never suggests anything. It was a deliberate choice (custom visuals and bookmark page attribution are best-effort there), but with F7–F12 fixed the adapter is much more reliable. Options: keep the policy; scope the caution to the tables that custom visuals and bookmarks touch; or show candidates with a "verify in PBIR" caveat.
 3. **Explain formatting-only references.** Supply Chain's broken binding comes from a colour rule, not a visual's fields. The warning should say "formatting rule refers to a missing column", which is lower severity, rather than "broken binding".
 4. **Name custom visuals.** Types appear as internal ids (`PBI_CV_885EF3C3_...`, `simpleImageEBC4...`). Map them to display names from the report's custom visual list or the `CustomVisuals/` folder.
