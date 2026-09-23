@@ -93,6 +93,11 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                     candidates = by_column_name.get(field.casefold(), [])
                     if len(candidates) > 1:
                         candidates = [k for k in candidates if _names_table(text, k[1])] or candidates
+                    if len(candidates) > 1 and home:
+                        # DAX binds a bare [col] to the expression's own table
+                        # when that table has the column (a measure on Calculations
+                        # summing [Revenue] reads Calculations[Revenue]).
+                        candidates = [k for k in candidates if k[1].casefold() == home.casefold()] or candidates
                     if len(candidates) == 1:
                         key = candidates[0]
                     elif candidates:

@@ -61,6 +61,15 @@ class ColumnUsageTests(unittest.TestCase):
         path.write_text(json.dumps(raw or raw_model()), encoding="utf-8")
         return parse_model(path)
 
+    def test_bare_column_in_measure_binds_to_its_own_table(self):
+        raw = {"model": {"name": "M", "tables": [
+            {"name": t, "columns": [{"name": "Revenue"}], "measures": [
+                {"name": "Total", "expression": "SUM([Revenue])"}] if t == "Calc" else []}
+            for t in ("Fact A", "Fact B", "Calc")], "relationships": []}}
+        analysis = build_column_usage(self.model(raw), None)
+        self.assertFalse([i for i in analysis["globalIssues"] if "Ambiguous" in i])
+        self.assertFalse(any(analysis.get("tableIssues", {}).values()))
+
     def rows(self, column, model=None, report=None):
         analysis = build_column_usage(model or self.model(), report or report_fixture())
         return [r for r in analysis["rows"] if r["column"] == column]
