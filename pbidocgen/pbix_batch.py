@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
 
 from .catalog import build_catalog, read_metadata, validate_metadata, describe_html
@@ -33,6 +34,7 @@ def resolve_tool(value):
 
 
 def extract_pbix(source, destination, tool, timeout, log):
+    started = time.time()
     command = [tool, 'extract', str(source), '-extractFolder', str(destination), '-modelSerialization', 'Raw']
     with log.open('w', encoding='utf-8') as stream:
         try:
@@ -41,6 +43,16 @@ def extract_pbix(source, destination, tool, timeout, log):
             raise ValueError(f'Extraction timed out after {timeout}s; see {log.name}. Increase --extract-timeout if needed.') from exc
     if result.returncode:
         raise ValueError(f'pbi-tools exited with code {result.returncode}; see {log.name}. Check its compatibility with this PBIX/Power BI Desktop version.')
+    beside = Path(source).with_suffix('')
+    if not (Path(destination).is_dir() and any(Path(destination).iterdir())) and beside.is_dir() \
+            and (beside / 'Model').exists() and beside.stat().st_mtime >= started - 5:
+        # For older PBIX files pbi-tools ignores -extractFolder and writes next to
+        # the PBIX. Move that output into the working folder so nothing is left behind.
+        if Path(destination).exists():
+            shutil.rmtree(destination)
+        shutil.move(str(beside), str(destination))
+        with log.open('a', encoding='utf-8') as stream:
+            stream.write(f'\npbi-doc-gen: pbi-tools wrote to {beside} instead of the extract folder; moved it.\n')
 
 
 def load_extracted(folder, source, has_embedded_model):

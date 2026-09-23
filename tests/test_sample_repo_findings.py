@@ -71,6 +71,21 @@ class LegacyMashupTests(unittest.TestCase):
         self.assertEqual([e["name"] for e in model["expressions"]], ["Other Q"])
 
 
+class TmdlLegacySourceTests(unittest.TestCase):
+    def test_tmdl_data_source_mashup_is_inlined(self):
+        package = LegacyMashupTests().package()
+        with tempfile.TemporaryDirectory() as d:
+            m = Path(d)
+            write(m / "model.tmdl", "model Model\n\tculture: en-US\n")
+            write(m / "dataSources.tmdl", "dataSource g = provider\n\tconnectionString: "
+                  f'provider=Microsoft.PowerBI.OleDb;mashup="{package}";location=Age\n')
+            write(m / "tables" / "Age.tmdl", "table Age\n\tcolumn A\n\n\tpartition Age-1 = query\n\t\tmode: import\n"
+                  "\t\tsource\n\t\t\tdataSource: g\n")
+            model = parse_model(m)
+        source = model["tables"][0]["partitions"][0]["source"]
+        self.assertEqual((source["sourceType"], source["object"]), ("Excel workbook", "a;b.xlsx"))
+
+
 class TracerTests(unittest.TestCase):
     def issues(self, code):
         value = Tracer().trace(code, "Q")
