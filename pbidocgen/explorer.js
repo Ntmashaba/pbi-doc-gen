@@ -230,7 +230,7 @@ function rLayout(){
     <div class="legend">${legend}<span><span class="dot" style="border:1px dashed var(--ink3);background:transparent"></span>Hidden</span><span><span class="badge b-warn">!</span> Unresolved binding</span></div>`+
     (scopedPages().map(p=>{
       const g=layoutGeometry(p);
-      return `<div class="card"><h2 title="${esc(p.id)}">${esc(p.name||p.label)} ${p.hidden?'· hidden page':''}</h2>
+      return `<div class="card"><h2 title="${esc(p.id)}">${esc(pageTitle(p))} ${p.hidden?'· hidden page':''}</h2>
       ${g.placed.length?`<div class="erd-toolbar layout-toolbar"><span class="mut">Select a shape for details. Zoom and scroll to read small visuals.</span><div class="erd-zoom" role="group" aria-label="Zoom ${esc(p.name)}"><button aria-label="Zoom out ${esc(p.name)}" onclick="${action('zoomPageLayout',p.id,-.25)}">−</button><output id="layout-zoom-${pageKey(p.id)}" aria-live="polite">${Math.round((layoutZooms.get(p.id)||1)*100)}%</output><button aria-label="Zoom in ${esc(p.name)}" onclick="${action('zoomPageLayout',p.id,.25)}">+</button><button onclick="${action('zoomPageLayout',p.id,0)}">Fit width</button></div></div><div class="layout-viewport" tabindex="0" role="region" aria-label="${esc(p.name)} visual layout"><div id="layout-canvas-${pageKey(p.id)}" class="page-canvas" style="width:${(layoutZooms.get(p.id)||1)*100}%;aspect-ratio:${g.width}/${g.height}">${g.placed.map(v=>{
         const f=visualFields(p.id,v), kind=visualKind(v);
         const names=[...f.measures.map(n=>'Σ '+n.name),...f.columns.map(n=>n.name)];
