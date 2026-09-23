@@ -35,8 +35,10 @@ const {pathToFileURL}=require('node:url'),{execFileSync}=require('node:child_pro
   execFileSync('python',['generate_docs.py','--catalog',root]);
   await page.goto(pathToFileURL(path.join(root,'pbi-home.html')).href);
   await page.getByText('Monthly',{exact:true}).waitFor();
-  assert.match(await page.locator('#tree').innerText(),/second_user/);
+  assert.match(await page.locator('#tree').textContent(),/second_user/); // inside collapsed card details
   // Cross-report source index and clickable source tags.
+  // The hub splits into Reports / Sources / Manage views.
+  await page.locator('a[data-view="sources"]').click();
   assert.match(await page.locator('#source-index').innerText(),/SQL Server · server \/ db/);
   await page.locator('#source-index .tag').first().click();
   assert.equal(await page.locator('#search').inputValue(),await page.locator('#source-index .tag').first().innerText());
@@ -52,6 +54,7 @@ const {pathToFileURL}=require('node:url'),{execFileSync}=require('node:child_pro
   assert.ok((await page.locator('.card h3 a').first().getAttribute('href')).startsWith('blob:'));
   await page.locator('#search').fill('second_user');assert.equal(await page.locator('.card').count(),1);
   await page.locator('#search').fill('');
+  await page.locator('a[data-view="manage"]').click();
   await download('Download refreshed home',path.join(root,'pbi-home.html'));
   await page.goto(pathToFileURL(path.join(root,'pbi-home.html')).href);
   assert.equal(await page.locator('.card').count(),2);

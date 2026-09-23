@@ -18,7 +18,7 @@ const {execFileSync}=require('node:child_process');
    assert.equal(await page.evaluate(()=>activeTab),id);};
   assert.equal(await page.evaluate(()=>activeTab),'overview');
   assert.equal(await page.locator('nav .nav-btn').count(),6);
-  for(const id of await page.evaluate(()=>TABS.filter(t=>t.avail).map(t=>t.id))){await openTab(id);}
+  for(const id of await page.evaluate(()=>TABS.filter(t=>t.avail&&!t.hidden).map(t=>t.id))){await openTab(id);}
   await openTab('columns');await page.locator('#column-search').fill('Amount');
   await page.locator('#global-page').selectOption('p2');await openTab('tables');
   assert.equal(await page.locator('#global-page').inputValue(),'p2');
@@ -35,18 +35,19 @@ const {execFileSync}=require('node:child_process');
   assert.match(await page.locator('#impact-details').innerText(),/Sales\[Total\]/);
   await openTab('lineage');
   // SVG labels are truncated; match its safely encoded full handler instead.
+  // Selecting a node toggles the lineage focus; the hostile name must stay inert.
   await page.locator('#lineage-board g[onclick*="reviewMarker"]').click();
+  assert.equal(await page.evaluate(()=>lineageFocus?.key),"x');globalThis.reviewMarker=1;//");
   await page.locator('#lineage-board g[onclick*="reviewMarker"]').click();
+  assert.equal(await page.evaluate(()=>lineageFocus),null);
   assert.equal(await page.evaluate(()=>globalThis.reviewMarker),undefined);
-  await page.locator('details[open]').waitFor();
-  assert.equal(await page.locator('details[open]').count(),1);
   await openTab('rels');
   const names=await page.evaluate(()=>[slug('Sales-US'),slug('Sales US')]);assert.notEqual(names[0],names[1]);
   await openTab('layout');await page.locator('.visual-box').first().click();
   assert.ok(await page.locator('#inspector').isVisible());await page.keyboard.press('Tab');
   await page.locator('#inspector').getByRole('button',{name:'Close details',exact:true}).click();
   const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'pbi-browser-'));
-  const exports=[['columns','Export filtered CSV','column-page-usage.csv'],['tables','Export source summary CSV','report-table-sources.csv'],['sources','Export all M queries CSV','source-queries.csv'],['sources','Export source objects CSV (with code)','source-objects.csv'],['sources','Export source objects CSV (no code)','source-objects-no-code.csv'],['sources','Export primary sources CSV','primary-sources.csv'],['cleanup','Export evidence at column/page grain','cleanup-column-page-usage.csv']];
+  const exports=[['columns','Export filtered CSV','column-page-usage.csv'],['tables','Export source summary CSV','report-table-sources.csv'],['sources','Export all M queries CSV','source-queries.csv'],['sources','Export source objects CSV (with code)','source-objects.csv'],['sources','Export source objects CSV (no code)','source-objects-no-code.csv'],['primary-sources','Export primary sources CSV','primary-sources.csv'],['cleanup','Export evidence at column/page grain','cleanup-column-page-usage.csv']];
   for(const [tab,label,suffix] of exports){
    await openTab(tab);
    // Detailed inventories sit in collapsed sections; expand the one holding the button.
