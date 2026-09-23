@@ -206,21 +206,29 @@ function zoomPageLayout(pageId,delta){
  const label=document.getElementById('layout-zoom-'+pageKey(pageId));
  if(label)label.textContent=Math.round(zoom*100)+'%';
 }
+// Untitled visuals: a readable type plus the first field ("Card · Amount"), not "cardVisual".
+const VISUAL_TYPE_NAMES={textbox:'Text box',cardVisual:'Card',card:'Card',multiRowCard:'Multi-row card',tableEx:'Table',pivotTable:'Matrix',slicer:'Slicer',advancedSlicerVisual:'Slicer',actionButton:'Button',image:'Image',shape:'Shape',basicShape:'Shape',kpi:'KPI',gauge:'Gauge',map:'Map',filledMap:'Filled map',decompositionTreeVisual:'Decomposition tree',keyDriversVisual:'Key influencers',qnaVisual:'Q&A'};
+function visualTypeName(t){t=String(t||'Visual');return VISUAL_TYPE_NAMES[t]||t.replace(/Visual$/,'').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/^./,c=>c.toUpperCase());}
+function visualName(pageId,v){
+ if(v.title) return v.title;
+ const f=visualFields(pageId,v), first=f.measures[0]||f.columns[0];
+ return visualTypeName(v.type)+(first?' · '+first.name:'');
+}
 function rLayout(){
   const legend=Object.entries(KIND_CLASS).map(([k,c])=>`<span><span class="dot ${c}"></span>${esc(k)}</span>`).join('');
   return `<h1>Page layout</h1><p class="sub">A schematic from saved visual positions, not rendered charts or live data. Boxes list the measures (Σ) and columns each visual uses; select one for its bindings and filters.</p>
     <div class="legend">${legend}<span><span class="dot" style="border:1px dashed var(--ink3);background:transparent"></span>Hidden</span><span><span class="badge b-warn">!</span> Unresolved binding</span></div>`+
     (scopedPages().map(p=>{
       const g=layoutGeometry(p);
-      return `<div class="card"><h2>${esc(p.label||p.name)} ${p.hidden?'· hidden page':''}</h2>
+      return `<div class="card"><h2 title="${esc(p.id)}">${esc(p.name||p.label)} ${p.hidden?'· hidden page':''}</h2>
       ${g.placed.length?`<div class="erd-toolbar layout-toolbar"><span class="mut">Select a shape for details. Zoom and scroll to read small visuals.</span><div class="erd-zoom" role="group" aria-label="Zoom ${esc(p.name)}"><button aria-label="Zoom out ${esc(p.name)}" onclick="${action('zoomPageLayout',p.id,-.25)}">−</button><output id="layout-zoom-${pageKey(p.id)}" aria-live="polite">${Math.round((layoutZooms.get(p.id)||1)*100)}%</output><button aria-label="Zoom in ${esc(p.name)}" onclick="${action('zoomPageLayout',p.id,.25)}">+</button><button onclick="${action('zoomPageLayout',p.id,0)}">Fit width</button></div></div><div class="layout-viewport" tabindex="0" role="region" aria-label="${esc(p.name)} visual layout"><div id="layout-canvas-${pageKey(p.id)}" class="page-canvas" style="width:${(layoutZooms.get(p.id)||1)*100}%;aspect-ratio:${g.width}/${g.height}">${g.placed.map(v=>{
         const f=visualFields(p.id,v), kind=visualKind(v);
         const names=[...f.measures.map(n=>'Σ '+n.name),...f.columns.map(n=>n.name)];
-        const label=`${v.title||v.type} (${kind}${v.hidden?', hidden':''})${f.unresolved.length?`, ${f.unresolved.length} unresolved binding(s)`:''}`;
+        const label=`${visualName(p.id,v)} (${kind}${v.hidden?', hidden':''})${f.unresolved.length?`, ${f.unresolved.length} unresolved binding(s)`:''}`;
         return `<button data-page-id="${esc(p.id)}" data-visual-id="${esc(v.id)}" aria-pressed="false" class="visual-box ${KIND_CLASS[kind]}${v.hidden?' hidden-visual':''}" style="left:${100*(v.x-g.left)/g.width}%;top:${100*(v.y-g.top)/g.height}%;width:${100*v.width/g.width}%;height:${100*v.height/g.height}%" title="${esc(label+(names.length?': '+names.join(', '):''))}" aria-label="${esc(label)}" onclick="${action('inspectVisual',p.id,v.id)}">
-          <span class="vb-head">${f.unresolved.length?'<span class="badge b-warn">!</span> ':''}<b>${esc(v.title||v.type)}</b><small>${esc(v.type)}${v.hidden?' · hidden':''}</small></span>
+          <span class="vb-head">${f.unresolved.length?'<span class="badge b-warn">!</span> ':''}<b>${esc(visualName(p.id,v))}</b><small>${esc(visualTypeName(v.type))}${v.hidden?' · hidden':''}</small></span>
           <span class="vb-fields">${names.map(esc).join('<br>')}</span></button>`;}).join('')}</div></div>`:'<p class="mut">No visuals with usable coordinates.</p>'}
-      <details><summary>All visuals (${p.visuals.length}); ${g.unplaced.length} without usable coordinates</summary><div class="body">${p.visuals.map(v=>`<p><button class="xl" onclick="${action('inspectVisual',p.id,v.id)}">${esc(v.title||v.type)} [${esc(v.id)}]${v.hidden?' · hidden':''}</button></p>`).join('')}</div></details></div>`;
+      <details><summary>All visuals (${p.visuals.length}); ${g.unplaced.length} without usable coordinates</summary><div class="body">${p.visuals.map(v=>`<p><button class="xl" onclick="${action('inspectVisual',p.id,v.id)}">${esc(visualName(p.id,v))} [${esc(v.id)}]${v.hidden?' · hidden':''}</button></p>`).join('')}</div></details></div>`;
     }).join('')||'<p>No pages in this selection.</p>');
 }
 function inspectVisual(pageId,visualId){
