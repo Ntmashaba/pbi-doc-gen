@@ -1,7 +1,7 @@
 # UI & reporting review: handover
 
 **Branch:** `ui-review-fixes`, created from `pbi-doc-gen-pbix-batch` (`29730a8`).
-**Written:** 23 September 2026, at the end of a review session that could not push, so this file carries the context forward.
+**Written:** 23 September 2026, at the end of a review session. This file carries the context forward.
 
 ## What was done
 
@@ -14,7 +14,24 @@
    ```
    The sample is Retail Sales: 7 tables, 45 columns, 14 measures, 6 relationships, 1 RLS role, and 3 pages (one hidden). Sources are SQL Server `FinanceDW`, the SharePoint workbook `Budget FY26.xlsx` and `\\fileserver\exports\targets.csv`. Unused columns (`LegacyFlag`, `ETLBatchId`, `Email`, `Phone`, `SupplierCode`, `Colour`, `ListPrice`, `FiscalWeek`, `City`) and an unused measure (`Revenue YTD`) are there on purpose. The binding `Date[Calendar]` is also deliberately broken.
 
-No product code has changed yet.
+No product code had changed at that point. See "Progress" below.
+
+## Progress (23 September 2026, second session)
+
+Plan step 1 is done: task 0 and A1–A5. 113 tests pass (`python tests/run_ci.py`). The new regression tests are in `tests/test_retail_sample.py`.
+
+| Item | What changed | Sample, before → after |
+|---|---|---|
+| Task 0 | `word_writer.py` no longer puts a backslash inside an f-string expression. README states Python 3.10 or later (the code uses `str \| None` annotations). | `test_page_references` imports again |
+| A1 | `column_usage.py` scopes an unresolved `T[F]` to table `T` when `T` exists (`tableIssues`). Bare or unknown-table references, missing pages, report warnings and "no report" stay global (`globalIssues`) and **still hold every candidate in Review**. That is a deliberate choice against the "candidate with caveat" suggestion, because those issues can hide real usage. `issues` is still the union, for the coverage box. `primary_sources.py` gets the same scoping. | Deletion candidates 0 → 13, Review 15 → 2 (`Date[FiscalWeek]`, `Date[Month]`, because the broken binding names Date). The Targets CSV changes from "Usage unresolved" to "No reporting usage found". |
+| A5 | Follows from A1: the Impact inspector reads the scoped `reviewNotes`. | `Budget[Amount]` has no review notes |
+| A2 | `columns.measures` has one assessment per measure (Keep / Review / Deletion candidate), including dependants, model roots (RLS, calculated columns, calculation items, detail rows) and pages. A measure used only by other unused measures stays a candidate, and the note names those measures. `columns.tables` lists whole tables where every column and measure is a candidate and no relationship touches them. Cleanup review shows both and exports `cleanup-measures.csv`. The CLI `--csv` is still columns only. | `Revenue YTD` is a candidate. The whole `Targets` table is flagged. |
+| A3 | The usage matrix hides relationship-only links unless "Include relationship-only" is ticked. | "Possible" cells 10 → 0 by default |
+| A4 | New `pbidocgen/source_labels.py` holds one vocabulary and one "type · name" label, used by both `model_parser` and `external_sources`. `Web.Contents` on a SharePoint document becomes "SharePoint file". `File.Contents` becomes "CSV file" / "Excel workbook" by extension. Partitions carry `source.label`, and lineage carries `sourceLabel`. Overview shows labels as pills. Lineage source nodes are wider, shortened in the middle, and have a tooltip. `report_metadata.js` matches saved connection details by type family, so saved usernames survive the rename. | Every screen says `SQL Server · finance-sql.corp.local / FinanceDW`, `SharePoint file · Budget FY26.xlsx`, `CSV file · targets.csv` |
+
+The two parsers are still separate. Only their vocabulary is shared. Merging them fully is still open.
+
+Next is plan step 2: B1, B2, B5 and C.
 
 ## Environment notes
 

@@ -474,9 +474,10 @@ def build_docx_body(payload: dict) -> str:
                 col_rows.append([c["name"], c["dataType"], _join(notes, "; ", "")])
             if col_rows:
                 parts.append(table(["Column", "Type", "Notes"], col_rows, [0.3, 0.16, 0.54]))
+            level_sep = " \u203a "
             for h in t["hierarchies"]:
                 parts.append(text_para(
-                    f"Hierarchy \u201c{h['name']}\u201d: {_join(h['levels'], ' \u203a ')}",
+                    f"Hierarchy \u201c{h['name']}\u201d: {_join(h['levels'], level_sep)}",
                     style="Muted"))
             for p_ in t["partitions"]:
                 s = p_["source"]

@@ -161,6 +161,7 @@ def link(model: dict, report: dict) -> dict:
             src = part["source"]
             lineage.append({
                 "sourceType": src["sourceType"],
+                "sourceLabel": src.get("label") or src["sourceType"],
                 "server": src.get("server"),
                 "database": src.get("database"),
                 "object": src.get("object") or src.get("detail"),

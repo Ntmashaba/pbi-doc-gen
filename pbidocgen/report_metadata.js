@@ -11,10 +11,15 @@ function cleanDocumentation(value){
  return out;
 }
 let documentation=cleanDocumentation(JSON.parse(document.getElementById('pbi-documentation-metadata')?.textContent||'{}'));
-const connectionIdentity=c=>JSON.stringify([c.sourceType||'',c.server||'',c.database||'']);
+// Source types were renamed (File -> CSV file/Excel workbook, Web / API -> SharePoint file).
+// Match saved details by family so usernames survive regeneration.
+const SOURCE_FAMILY={'File':'file','CSV file':'file','Excel workbook':'file','Web':'web','Web / API':'web','SharePoint file':'web','SharePoint':'sharepoint','SharePoint files':'sharepoint'};
+const connectionIdentity=c=>JSON.stringify([SOURCE_FAMILY[c.sourceType]||c.sourceType||'',c.server||'',c.database||'']);
 for(const source of DATA.sourceObjects||[]){
  if(source.status==='Not applicable') continue;
- if(!documentation.connections.some(c=>connectionIdentity(c)===connectionIdentity(source))) documentation.connections.push(Object.fromEntries(['sourceType','server','database','username','authentication','connectionName'].map(k=>[k,source[k]||''])));
+ const saved=documentation.connections.find(c=>connectionIdentity(c)===connectionIdentity(source));
+ if(saved){ if(source.sourceType) saved.sourceType=source.sourceType; }
+ else documentation.connections.push(Object.fromEntries(['sourceType','server','database','username','authentication','connectionName'].map(k=>[k,source[k]||''])));
 }
 function documentationInput(label,id,value){return `<label style="display:block;margin:1rem 0">${esc(label)}<input class="search" style="display:block;width:100%;max-width:900px" id="${id}" value="${esc(value)}" oninput="captureDocumentation()"></label>`;}
 function captureDocumentation(){

@@ -31,8 +31,23 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
     graph = defaultdict(set)
     table_deps = defaultdict(set)
     reasons = defaultdict(set)
+    measure_reasons = defaultdict(set)  # non-measure model roots that need a measure
     uncertain = defaultdict(set)
-    issues = set()
+    issues = set()  # global: blocks every deletion candidate
+    table_issues = defaultdict(set)  # scoped: blocks only columns of the named table
+
+    def add_issue(message, table_name=""):
+        """Scope an issue to a model table when the reference names one.
+
+        An unresolved T[F] with a known T can only point at T, so it must not
+        hold back unrelated tables. Bare or unknown-table references could
+        mean anything and stay global.
+        """
+        home = table_lookup.get((table_name or "").casefold())
+        if home:
+            table_issues[home].add(message)
+        else:
+            issues.add(message)
 
     def label(key):
         return f"{key[1]}[{key[2]}]"
@@ -60,7 +75,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
             if key:
                 found.add(key)
             else:
-                issues.add(f"Unresolved DAX reference {table}[{field}]")
+                add_issue(f"Unresolved DAX reference {table}[{field}]", table)
             spans.append(match.span())
         chars = list(text)
         for start, end in spans:
@@ -120,6 +135,9 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         for dep in deps & columns.keys():
             reasons[dep].add(what)
             (used_by_measures if root[0] == "m" else used_by_calculations)[dep].add(label(root))
+        if root[0] == "c":
+            for dep in deps & measures.keys():
+                measure_reasons[dep].add(what)
         for table in whole_tables:
             for key in columns:
                 if key[1] == table:
@@ -135,6 +153,8 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         for dep in expanded & columns.keys():
             reasons[dep].add(what)
             used_by_calculations[dep].add(what)
+        for dep in expanded & measures.keys():
+            measure_reasons[dep].add(what)
         for key in columns:
             if key[1] in whole_tables:
                 uncertain[key].add(f"Whole-table dependency in {what}")
@@ -210,7 +230,8 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
             if key:
                 return key
         if field:
-            issues.add(f"Unresolved report binding {binding.get('table') or '?'}[{binding.get('field')}]")
+            add_issue(f"Unresolved report binding {binding.get('table') or '?'}[{binding.get('field')}]",
+                      binding.get("table"))
         return None
 
     consumers = []
@@ -302,7 +323,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
     for key, col in sorted(columns.items()):
         _, table, column = key
         internal = sorted(reasons[key])
-        review = sorted(uncertain[key] | issues)
+        review = sorted(uncertain[key] | table_issues[table] | issues)
         if report_use[key] or internal:
             decision = "Keep"
         elif review:
@@ -342,6 +363,11 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                              "Internal only" if internal else "Not assessed" if not report else "No references detected",
                              pageMeasures=sorted(use["measures"]) if use else [],
                              evidence=sorted(use["evidence"]) if use else sorted(report_use[key])))
+    measure_rows, measure_counts = _assess_measures(
+        measures, graph, measure_reasons, measure_page_use, report_measures,
+        report, pages, issues, table_issues, label)
+    table_assessments = _assess_tables(tables, rows, measure_rows, model["relationships"], report)
+
     # Track possible relationship dependencies separately on each real page.
     adjacency = defaultdict(set)
     for rel in model["relationships"]:
@@ -374,6 +400,8 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                                     kinds=[], evidence=[], fields=[], measures=[]))
     measure_pages = [flatten(key[1], pid, use, measure=key[2]) for key, uses in sorted(measure_page_use.items()) for pid, use in sorted(uses.items())]
     return {"rows": rows, "counts": dict(counts), "columnCount": len(columns), "csvFields": CSV_FIELDS,
+            "measures": measure_rows, "measureCounts": measure_counts, "measureCsvFields": MEASURE_CSV_FIELDS,
+            "tables": table_assessments,
             "tablePages": table_pages, "measurePages": measure_pages,
             "reportMeasures": sorted(report_measures),
             "dependencyGraph": {
@@ -385,7 +413,91 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                                            for k, deps in sorted(table_deps.items()) for t in sorted(deps)],
                 "consumers": consumers,
             },
-            "scope": SCOPE, "sourceNote": SOURCE_NOTE, "issues": sorted(issues)}
+            "scope": SCOPE, "sourceNote": SOURCE_NOTE,
+            "issues": sorted(issues | {i for v in table_issues.values() for i in v}),
+            "globalIssues": sorted(issues),
+            "tableIssues": {t: sorted(v) for t, v in sorted(table_issues.items()) if v}}
+
+
+def _assess_measures(measures, graph, measure_reasons, measure_page_use, report_measures,
+                     report, pages, issues, table_issues, label):
+    """Deletion assessment for measures, mirroring the column rules.
+
+    A measure is kept when the report reaches it (directly, via another
+    measure, or a bookmark) or when a non-measure model root needs it
+    (calculated column, RLS, calculation item, detail rows). A measure used
+    only by other unused measures is still a candidate; the note names them.
+    """
+    dependants = defaultdict(set)
+    for key, deps in graph.items():
+        for dep in deps:
+            if dep in measures and key != dep:
+                dependants[dep].add(key)
+    rows, counts = [], defaultdict(int)
+    for key, m in sorted(measures.items()):
+        _, table, name = key
+        in_report = label(key) in report_measures
+        internal = sorted(measure_reasons[key])
+        review = sorted(table_issues.get(table, set()) | issues)
+        used_by = sorted(label(k) for k in dependants[key])
+        if in_report or internal:
+            decision = "Keep"
+        elif review:
+            decision = "Review"
+        else:
+            decision = "Deletion candidate"
+        counts[decision] += 1
+        page_ids = sorted(pid for pid in measure_page_use[key] if pid)
+        if in_report:
+            reason = "Used by the supplied report."
+        elif internal:
+            reason = "Required by model dependencies."
+        elif review:
+            reason = "; ".join(review)
+        elif used_by:
+            reason = ("Referenced only by measures or calculations that the report does not use (" +
+                      ", ".join(used_by) + "). Remove them together or not at all.")
+        else:
+            reason = "No report or model references detected. Validate other reports and Excel consumers before removal."
+        rows.append(dict(
+            table=table, measure=name, decision=decision, reason=reason,
+            report=report["name"] if report else "Not supplied",
+            usedInReport="Yes" if in_report else "Not detected" if report else "Unknown",
+            pages=[pages[pid]["name"] for pid in page_ids if pid in pages], pageIds=page_ids,
+            usedBy=used_by, modelDependencies=internal, reviewNotes=review,
+            displayFolder=m.get("displayFolder") or "", expression=m.get("expression") or "",
+            scope=SCOPE))
+    return rows, dict(counts)
+
+
+def _assess_tables(tables, column_rows, measure_rows, relationships, report):
+    """Whole tables whose every column and measure is a deletion candidate."""
+    by_table = defaultdict(set)
+    for r in column_rows:
+        by_table[r["table"]].add(r["decision"])
+    for r in measure_rows:
+        by_table[r["table"]].add(r["decision"])
+    related = {rel[side] for rel in relationships for side in ("fromTable", "toTable")}
+    out = []
+    for name, tbl in sorted(tables.items()):
+        decisions = by_table.get(name, set())
+        if not report or decisions != {"Deletion candidate"} or name in related or tbl.get("calculationGroup"):
+            continue
+        sources = sorted({p["source"].get("label") or p["source"].get("sourceType") or "Unknown"
+                          for p in tbl["partitions"]})
+        out.append(dict(table=name, decision="Deletion candidate",
+                        reason="No column or measure in this table is used, and no relationship touches it.",
+                        columns=sum(1 for r in column_rows if r["table"] == name and not r["pageId"]),
+                        measures=sum(1 for r in measure_rows if r["table"] == name), sources=sources))
+    return out
+
+
+MEASURE_CSV_FIELDS = [("decision", "Deletion assessment"), ("usedInReport", "Used in report"),
+                      ("report", "Report"), ("table", "Home table"), ("measure", "Measure"),
+                      ("displayFolder", "Display folder"), ("pages", "Report pages"),
+                      ("usedBy", "Used by measures/calculations"), ("modelDependencies", "Model dependencies"),
+                      ("reason", "Assessment reason"), ("reviewNotes", "Review notes"),
+                      ("expression", "DAX expression"), ("scope", "Assessment scope")]
 
 
 CSV_FIELDS = [("decision", "Deletion assessment"), ("usedInReport", "Used in report"),

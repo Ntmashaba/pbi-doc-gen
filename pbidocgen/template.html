@@ -319,8 +319,7 @@ function rOverview(){
     stats.push(["Pages", R.pages.length], ["Visuals", R.pages.reduce((a,p)=>a+p.visuals.length,0)],
       ["Filters", allFilters().length], ["Bookmarks", R.bookmarks.length]);
   }
-  const servers = has.model ? [...new Set(M.tables.flatMap(t=>t.partitions.map(p=>p.source.server)).filter(Boolean))] : [];
-  const srcTypes = has.model ? [...new Set(M.tables.flatMap(t=>t.partitions.map(p=>p.source.sourceType)))] : [];
+  const srcTypes = has.model ? [...new Set(M.tables.flatMap(t=>t.partitions.map(p=>(p.source.label||p.source.sourceType))))] : [];
   const unused = has.linked ? L.tableUsage.filter(u=>u.usage==="none") : [];
   const warnCount = allWarnings().filter(w=>w.severity==="warning").length;
 
@@ -337,8 +336,7 @@ function rOverview(){
   </div>
   ${has.model?`<h2>Data sources at a glance</h2>
   <div class="card">
-    <div class="mut" style="margin-bottom:.4rem">${srcTypes.map(esc).join(" · ")||"No sources detected"}</div>
-    ${servers.length?`<div class="pill-list">${servers.map(s=>`<span class="ref">${esc(s)}</span>`).join("")}</div>`:""}
+    ${srcTypes.length?`<div class="pill-list">${srcTypes.map(s=>`<span class="ref">${esc(s)}</span>`).join("")}</div>`:`<div class="mut">No sources detected</div>`}
     <div class="mut" style="margin-top:.5rem">Full breakdown in <button class="xl" onclick="switchTab('sources')">Sources</button>.</div>
   </div>`:""}
   ${has.linked?`<h2>Usage verdict</h2>
@@ -368,7 +366,7 @@ function drawLineage(){
   const board = document.getElementById("lineage-board");
   if(!board) return;
   // group lineage rows into source nodes, table nodes, page nodes
-  const srcKey = r => [r.sourceType, r.server, r.database].filter(Boolean).join(" · ") || r.sourceType;
+  const srcKey = r => r.sourceLabel || [r.sourceType, r.server, r.database].filter(Boolean).join(" · ") || r.sourceType;
   const sources = [...new Map(L.lineage.filter(r=>tableInScope(r.table)).map(r=>[srcKey(r), {key:srcKey(r), type:r.sourceType}])).values()];
   const tables = scopedTables().map(t=>({name:t.name, usage:usageOf(t.name), type:t.tableType}));
   const pages = scopedPages();
@@ -386,7 +384,7 @@ function drawLineage(){
   edgesST.forEach(e=>{
     const si=sources.findIndex(s=>s.key===e.s), ti=tables.findIndex(t=>t.name===e.t);
     if(si<0||ti<0) return;
-    svg += edge(206, yOf(si,sources.length), colW+8, yOf(ti,tables.length), `e-s-${slug(e.s)} e-t-${slug(e.t)}`);
+    svg += edge(258, yOf(si,sources.length), colW+8, yOf(ti,tables.length), `e-s-${slug(e.s)} e-t-${slug(e.t)}`);
   });
   edgesTP.forEach(e=>{
     const ti=tables.findIndex(t=>t.name===e.t), pi=pages.findIndex(p=>p.id===e.p);
@@ -394,8 +392,10 @@ function drawLineage(){
     svg += edge(colW+206, yOf(ti,tables.length), colW*2+8, yOf(pi,pages.length), `e-t-${slug(e.t)} e-p-${pageKey(e.p)}`);
   });
   // nodes
-  const node = (x,y,w,label,fill,stroke,id,extra="")=>`<g class="lin-node" id="${id}" ${extra}><rect x="${x}" y="${y-12}" width="${w}" height="24" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/><text x="${x+8}" y="${y+4}" fill="var(--ink)">${esc(label.length>30?label.slice(0,29)+"…":label)}</text></g>`;
-  sources.forEach((s,i)=>{ svg += node(8, yOf(i,sources.length), 198, s.key, "var(--panel2)", "var(--line)", nodeId("s",s.key), `onclick="linHl('s','${slug(s.key)}')"`); });
+  // Source labels end with the file or database name, so shorten them in the middle.
+  const fit = (label,max,middle)=>label.length<=max?label:middle?label.slice(0,Math.ceil(max/2)-1)+"…"+label.slice(-Math.floor(max/2)):label.slice(0,max-1)+"…";
+  const node = (x,y,w,label,fill,stroke,id,extra="",max=30,middle=false)=>`<g class="lin-node" id="${id}" ${extra}><title>${esc(label)}</title><rect x="${x}" y="${y-12}" width="${w}" height="24" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/><text x="${x+8}" y="${y+4}" fill="var(--ink)">${esc(fit(label,max,middle))}</text></g>`;
+  sources.forEach((s,i)=>{ svg += node(8, yOf(i,sources.length), 250, s.key, "var(--panel2)", "var(--line)", nodeId("s",s.key), `onclick="linHl('s','${slug(s.key)}')"`, 38, true); });
   tables.forEach((t,i)=>{ svg += node(colW+8, yOf(i,tables.length), 198, t.name, "#fff", uColor(t.usage), nodeId("t",t.name), `onclick="${action('linHl','t',slug(t.name),t.name)}"`); });
   pages.forEach((p,i)=>{ svg += node(colW*2+8, yOf(i,pages.length), 198, `${p.name} [${p.id}]`, "var(--panel2)", "var(--line)", 'ln-p-'+pageKey(p.id), `onclick="linHl('p','${pageKey(p.id)}')"`); });
   ["Sources","Model tables","Report pages"].forEach((h,i)=>{ svg += `<text x="${i*colW+8}" y="${12}" font-size="10" fill="var(--ink3)" style="text-transform:uppercase;letter-spacing:.1em;font-family:var(--mono)">${h}</text>`; });

@@ -3,7 +3,10 @@ from .m_sources import Tracer, materialize
 from .source_objects import source_definitions
 
 
-def build_primary_sources(model, report, source_objects, analysis_issues=None):
+def build_primary_sources(model, report, source_objects, analysis_issues=None, table_issues=None):
+    """analysis_issues block every absence-of-usage verdict; table_issues only
+    block the model table they name."""
+    table_issues = table_issues or {}
     if not model:
         return dict(rows=[], unresolved=[])
     candidates = list(source_objects)
@@ -67,7 +70,7 @@ def build_primary_sources(model, report, source_objects, analysis_issues=None):
             evidence = 'Downstream model table has a possible dependency on this page' if possible_only else 'Downstream model table is referenced on this page; contribution of this external input is not proven'
         elif item['pageScope'] == 'Bookmark/report scope only':
             usage, evidence = 'Report scope only', 'Report/bookmark dependency found without a resolved individual page'
-        elif analysis_issues or item['status'] != 'Resolved':
+        elif analysis_issues or table_issues.get(item.get('table')) or item['status'] != 'Resolved':
             usage, evidence = 'Usage unresolved', 'Incomplete analysis prevents a reliable absence-of-usage assessment'
         elif not item.get('table'):
             usage, evidence = 'No model consumer found', 'No traced model partition consumes this shared query; execution is not observed'

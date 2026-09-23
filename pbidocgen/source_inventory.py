@@ -169,7 +169,7 @@ def build_source_inventory(model, report, linked, columns):
         for part in table["partitions"] or [{"name": "", "source": {}, "expression": ""}]:
             source = part["source"]
             obj = source.get("object") or ""
-            if not obj and source.get("sourceType") in ("Excel workbook", "CSV file", "SharePoint", "Web", "OData"):
+            if not obj and source.get("sourceType") in ("Excel workbook", "CSV file", "SharePoint file", "SharePoint files", "SharePoint list", "Web / API", "OData"):
                 obj = source.get("detail") or ""
             schema = source.get("schema")
             if schema and obj and not obj.startswith(schema + "."):

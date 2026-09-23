@@ -27,6 +27,8 @@ from .dax_lexer import mask_dax, REFERENCE
 from .input_validation import validate_model
 from pathlib import Path
 from .source_inventory import enrich_source
+from .source_labels import refine_source_type, source_label
+from .source_labels import refine_source_type, source_label
 
 
 # --------------------------------------------------------------------------
@@ -69,7 +71,8 @@ _M_PATTERNS = [
     ("Snowflake", re.compile(r'Snowflake\.Databases\s*\(\s*"([^"]+)"(?:\s*,\s*"([^"]+)")?', re.I), ("server", "database")),
     ("Excel workbook", re.compile(r'Excel\.Workbook\s*\(\s*File\.Contents\s*\(\s*"([^"]+)"', re.I), ("path",)),
     ("CSV file", re.compile(r'Csv\.Document\s*\(\s*File\.Contents\s*\(\s*"([^"]+)"', re.I), ("path",)),
-    ("SharePoint", re.compile(r'SharePoint\.(?:Files|Contents|Tables)\s*\(\s*"([^"]+)"', re.I), ("url",)),
+    ("SharePoint files", re.compile(r'SharePoint\.(?:Files|Contents)\s*\(\s*"([^"]+)"', re.I), ("url",)),
+    ("SharePoint list", re.compile(r'SharePoint\.Tables\s*\(\s*"([^"]+)"', re.I), ("url",)),
     ("Web", re.compile(r'Web\.Contents\s*\(\s*"([^"]+)"', re.I), ("url",)),
     ("OData", re.compile(r'OData\.Feed\s*\(\s*"([^"]+)"', re.I), ("url",)),
     ("ODBC", re.compile(r'Odbc\.(?:DataSource|Query)\s*\(\s*"([^"]+)"', re.I), ("dsn",)),
@@ -111,6 +114,8 @@ def extract_m_source(expression: str, mode: str) -> dict:
                 if val:
                     src[key if key in src else "detail"] = val
             break
+    # Same vocabulary as the M tracer (external_sources) so views agree.
+    src["sourceType"] = refine_source_type(src["sourceType"], src.get("detail"))
 
     schema_item = _ITEM_SCHEMA.search(expression)
     if schema_item:
@@ -277,6 +282,7 @@ def parse_model(model_path: str | Path) -> dict:
             data_source = next((d for d in model.get("dataSources", [])
                                 if d.get("name") == src.get("dataSource")), None)
             source = enrich_source(source, expression, p_mode, data_source)
+            source["label"] = source_label(source)
             partitions.append({
                 "name": part.get("name", ""),
                 "mode": part.get("mode", "import"),

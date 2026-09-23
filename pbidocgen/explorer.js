@@ -1,7 +1,7 @@
 /* Offline exploration. Source data remains immutable when a page is selected. */
 let pageScope = '*', activeTab = '', viewState = new Map();
 const expandedTables = new Set();
-let matrixQuery = '', impactQuery = '', impactNode = '', cleanupDecision = 'Deletion candidate';
+let matrixRelOnly = false, matrixQuery = '', impactQuery = '', impactNode = '', cleanupDecision = 'Deletion candidate';
 let comparison = null, comparisonName = '', comparisonError = '';
 const graph = DATA.columns?.dependencyGraph || {nodes:[],edges:[],consumers:[],wholeTableDependencies:[]};
 const graphNodes = new Map(graph.nodes.map(n=>[n.id,n]));
@@ -86,17 +86,23 @@ function rMatrix(){
   if(pageScope==='*'||pageScope==='') slots.push({pageId:'',page:'No specific page',report:R.name});
   return `<h1>Usage matrix</h1><p class="sub">Expand a table to see its columns across individual pages. Select a cell for its evidence. A dash means no page reference was detected, not that deletion is safe.</p>
     <input id="matrix-search" class="search" value="${esc(matrixQuery)}" placeholder="Search tables or columns…" aria-label="Search usage matrix" oninput="matrixQuery=this.value;renderMatrixBody()">
-    <p class="mut">Direct = visual or filter binding · Indirect = measure, calculation or table expression · Possible = relationship or calculated-table/parameter dependency. Hidden pages are included.</p>
+    <label class="mut"><input type="checkbox" id="matrix-rel"${matrixRelOnly?' checked':''} onchange="matrixRelOnly=this.checked;switchTab('matrix')"> Include relationship-only</label>
+    <p class="mut">Direct = visual or filter binding · Indirect = measure, calculation or table expression · Possible = calculated-table/parameter dependency${matrixRelOnly?', or an active relationship to a table used on the page':''}. Tables reached only through relationships are ${matrixRelOnly?'shown as Possible':'hidden; tick the box to show them'}. Hidden pages are included.</p>
     <div class="column-scroll"><table class="t matrix"><thead><tr><th>Table / column</th>${slots.map(p=>`<th>${esc(p.page)}<div class="mut">${esc(p.pageId)}</div></th>`).join('')}</tr></thead><tbody id="matrix-body">${matrixBody(slots)}</tbody></table></div>`;
 }
 function matrixBody(slots){
   return matrixRows().map(r=>`<tr><th>${r.column===null?`<button class="xl" aria-expanded="${expandedTables.has(r.table)}" onclick="${action('toggleMatrixTable',r.table)}">${expandedTables.has(r.table)?'−':'+'} ${esc(r.table)}</button>`:`<span class="matrix-column">${esc(r.column)}</span>`}</th>
     ${slots.map(p=>{
       const matches=(r.column===null?DATA.columns.tablePages:DATA.columns.rows).filter(x=>x.table===r.table&&(r.column===null||x.column===r.column)&&x.pageId===p.pageId);
-      const cell=usageCell(matches.filter(x=>r.column===null?x.kinds.length:x.evidence.length));
+      const counted=r.column===null?matches.map(matrixKinds).filter(x=>x.kinds.length):matches.filter(x=>x.evidence.length);
+      const cell=usageCell(counted);
       const label=!p.pageId&&matches.length?(matches.some(x=>x.evidence.length)?'Unassigned usage':'No page usage'):cell.label;
       return `<td class="${cell.cls}"><button class="xl" aria-label="${esc((r.column||r.table)+' on '+p.page+' ['+p.pageId+']: '+label)}" onclick="${action('inspectCell',r.table,r.column,p.pageId)}">${esc(label)}</button></td>`;
     }).join('')}</tr>`).join('')||`<tr><td colspan="${slots.length+1}">No tables match this selection.</td></tr>`;
+}
+// Relationship reachability alone says little about use, so it is opt-in.
+function matrixKinds(row){
+  return matrixRelOnly?row:{...row,kinds:row.kinds.filter(k=>k!=='Possible relationship dependency')};
 }
 function renderMatrixBody(){
   const slots=scopedPages().map(p=>({pageId:p.id,page:p.name}));
@@ -194,11 +200,23 @@ function rCleanup(){
   const rows=[...new Map(cleanupRows().map(r=>[nodeId('c',r.table,r.column),r])).values()];
   return `<h1>Cleanup review</h1><p class="sub">Whole-extract assessments, independent of the page selector. ${esc(DATA.columns.scope)}</p>
     <label>Assessment <select id="cleanup-decision" class="search" onchange="cleanupDecision=this.value;switchTab('cleanup')">${['Deletion candidate','Review','Keep',''].map(d=>`<option value="${d}"${cleanupDecision===d?' selected':''}>${d||'All assessments'}</option>`).join('')}</select></label>
-    <p>${rows.length} distinct columns · <button class="xl" onclick="exportCsvFile(columnCsv(cleanupRows()),'cleanup-column-page-usage.csv')">Export evidence at column/page grain</button></p>
+    ${rCleanupTables()}<h2>Columns</h2><p>${rows.length} distinct columns · <button class="xl" onclick="exportCsvFile(columnCsv(cleanupRows()),'cleanup-column-page-usage.csv')">Export evidence at column/page grain</button></p>
     <table class="t"><thead><tr><th>Column</th><th>Assessment</th><th>Why / evidence</th><th>Pages</th></tr></thead><tbody>${rows.map(r=>{
       const pages=DATA.columns.rows.filter(x=>x.table===r.table&&x.column===r.column&&x.pageId);
       return `<tr><th><button class="xl" onclick="${action('inspectNode',nodeId('c',r.table,r.column),'*')}">${esc(r.table)}[${esc(r.column)}]</button></th><td>${esc(r.decision)}</td><td>${esc(r.reason)}<details><summary>Dependencies and review notes</summary><p>${listText(r.modelDependencies)}</p><p>${listText(r.reviewNotes)}</p></details></td><td>${pages.map(p=>esc(pageLabel(p))).join('<br>')||esc(r.pageScope)}</td></tr>`;
-    }).join('')||'<tr><td colspan="4">No columns have this assessment.</td></tr>'}</tbody></table>`;
+    }).join('')||'<tr><td colspan="4">No columns have this assessment.</td></tr>'}</tbody></table>${rCleanupMeasures()}`;
+}
+function cleanupMeasureRows(){return (DATA.columns.measures||[]).filter(r=>!cleanupDecision||r.decision===cleanupDecision);}
+function rCleanupTables(){
+  const tables=(DATA.columns.tables||[]).filter(t=>!cleanupDecision||t.decision===cleanupDecision);
+  if(!tables.length) return '';
+  return `<div class="card"><b>Whole tables with no detected use</b><p>${tables.map(t=>`${esc(t.table)} (${t.columns} column(s), ${t.measures} measure(s)${t.sources.length?' · '+esc(t.sources.join('; ')):''})`).join('<br>')}</p><p class="mut">${esc(tables[0].reason)}</p></div>`;
+}
+function rCleanupMeasures(){
+  if(!DATA.columns.measures) return '';
+  const rows=cleanupMeasureRows();
+  return `<h2>Measures</h2><p>${rows.length} measures · <button class="xl" onclick="exportCsvFile(inventoryCsv(cleanupMeasureRows(),DATA.columns.measureCsvFields),'cleanup-measures.csv')">Export measure assessments</button></p>
+    <table class="t"><thead><tr><th>Measure</th><th>Assessment</th><th>Why / evidence</th><th>Pages</th></tr></thead><tbody>${rows.map(r=>`<tr><th><button class="xl" onclick="${action('inspectNode',nodeId('m',r.table,r.measure),'*')}">${esc(r.table)}[${esc(r.measure)}]</button></th><td>${esc(r.decision)}</td><td>${esc(r.reason)}${r.usedBy.length||r.modelDependencies.length||r.reviewNotes.length?`<details><summary>Dependants and review notes</summary><p>${listText(r.usedBy)}</p><p>${listText(r.modelDependencies)}</p><p>${listText(r.reviewNotes)}</p></details>`:''}</td><td>${r.pages.map(esc).join('<br>')||'No page usage detected'}</td></tr>`).join('')||'<tr><td colspan="4">No measures have this assessment.</td></tr>'}</tbody></table>`;
 }
 function csvFilename(name){
   const raw=R?.name||M?.name||DATA.title||'Power-BI';

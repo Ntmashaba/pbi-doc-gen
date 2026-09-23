@@ -20,7 +20,7 @@ Generate a single, self-contained, interactive HTML documentation file for a Pow
 
 The goal is onboarding: a Power BI developer who has never seen the report before should be able to open one HTML file and understand what the solution contains, where the data comes from, how the report actually consumes the model, what is safe to remove, and where the gotchas are.
 
-No installation beyond Python. No third-party packages. One command, one file out.
+No installation beyond Python (3.10 or later). No third-party packages. One command, one file out.
 
 ## Explore usage by report page
 

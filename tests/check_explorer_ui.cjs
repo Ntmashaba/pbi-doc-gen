@@ -38,7 +38,7 @@ assert.equal(run("sourceRows('Orders').length"),1);
 run("switchTab('columns')");assert.equal(node('column-search').value,'Amount');assert.equal(run('visibleColumns.length'),1);
 assert.equal(run('visibleColumns[0].pageId'),'p2');
 run("switchTab('pages')");assert.ok(!node('main').innerHTML.includes('id="pg-70_31"'));assert.ok(node('main').innerHTML.includes('id="pg-70_32"'));
-run("switchTab('matrix');toggleMatrixTable('Sales')");assert.match(node('main').innerHTML,/matrix-column/);assert.ok(!run('rMatrix()').includes('<div class="mut">p1</div>'));
+run("switchTab('matrix');toggleMatrixTable('Sales')");assert.match(node('main').innerHTML,/matrix-column/);assert.ok(!run('rMatrix()').includes('<div class="mut">p1</div>'));assert.equal(run("matrixKinds({kinds:['Possible relationship dependency']}).kinds.length"),0);run('matrixRelOnly=true');assert.equal(run("matrixKinds({kinds:['Possible relationship dependency']}).kinds.length"),1);assert.match(run('rMatrix()'),/id="matrix-rel" checked/);run('matrixRelOnly=false');
 run("inspectCell('Sales','Amount','p2')");assert.match(node('inspector').innerHTML,/v1/);
 const amount='["c","Sales","Amount"]';
 same(run(`impactConsumers(${JSON.stringify(amount)}).map(c=>c.pageId)`),['p2']);
@@ -48,7 +48,7 @@ run("inspectNode(nodeId('m','Sales','Total'))");assert.match(node('inspector').i
 run("inspectVisual('p2','v1')");assert.match(node('inspector').innerHTML,/p2/);assert.match(node('inspector').innerHTML,/Resolved fields/);
 // A graph cycle must terminate and preserve shortest paths.
 run("reverseGraph.set(nodeId('m','Sales','Total'),[nodeId('m','Sales','Base')])");assert.equal(run(`downstreamPaths(${JSON.stringify(amount)}).size`),4);
-run("switchTab('cleanup')");assert.match(node('main').innerHTML,/3 distinct columns/);assert.equal(run('cleanupRows().length'),3);
+run("switchTab('cleanup')");assert.match(node('main').innerHTML,/3 distinct columns/);assert.equal(run('cleanupRows().length'),3);assert.match(node('main').innerHTML,/<h2>Measures<\/h2>/);assert.ok(run("cleanupMeasureRows().every(r=>r.decision==='Deletion candidate')"));
 run("setPageScope('');switchTab('columns')");node('column-search').value='';run('filterColumns()');assert.ok(run("visibleColumns.every(r=>r.pageId==='')"));
 run("setPageScope('*');switchTab('layout')");assert.match(node('main').innerHTML,/without usable coordinates/);
 same(run("layoutGeometry({width:100,height:100,visuals:[{x:-10,y:0,width:20,height:30},{x:null,y:0,width:20,height:30}]}).unplaced.length"),1);

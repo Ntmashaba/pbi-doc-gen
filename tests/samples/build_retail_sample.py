@@ -132,17 +132,28 @@ REPORT = {"name": "Retail Sales", "pages": PAGES, "reportFilters": [],
           "bookmarks": [{"name": "Top brands", "fields": [F("Product", "Brand")]}], "manifest": [], "warnings": []}
 
 
-def main(out):
-    out = Path(out)
-    out.mkdir(parents=True, exist_ok=True)
+def build_retail_model():
+    """Parse the sample model exactly as the command line would."""
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "model.bim"
         p.write_text(json.dumps(RAW), encoding="utf-8")
-        m = parse_model(p)
-        payload = build_payload(m, REPORT, link(m, REPORT), "Retail Sales")
-        render_html(payload, out / "Retail Sales.html")
-        (out / "Retail Sales.json").write_text(json.dumps(payload, indent=1), encoding="utf-8")
-        render_html(build_payload(m, None, None, "Finance Model"), out / "Finance Model.html")
+        return parse_model(p)
+
+
+def build_retail_payload(model=None):
+    """The combined Retail Sales payload; also used by tests/test_retail_sample.py."""
+    m = model or build_retail_model()
+    return build_payload(m, REPORT, link(m, REPORT), "Retail Sales")
+
+
+def main(out):
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    m = build_retail_model()
+    payload = build_retail_payload(m)
+    render_html(payload, out / "Retail Sales.html")
+    (out / "Retail Sales.json").write_text(json.dumps(payload, indent=1), encoding="utf-8")
+    render_html(build_payload(m, None, None, "Finance Model"), out / "Finance Model.html")
     print("Wrote sample documentation to", out)
 
 

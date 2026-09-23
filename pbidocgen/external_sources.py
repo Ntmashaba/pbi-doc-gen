@@ -7,6 +7,8 @@ import copy
 import re
 from urllib.parse import urlsplit, urlunsplit
 
+from .source_labels import refine_source_type
+
 # Function -> external type, navigation behavior. Document readers are separate:
 # Excel.Workbook(Json.Document etc.) is not a new connection.
 EXTERNAL = {
@@ -65,6 +67,11 @@ def external_value(tracer, fn, args):
             notes.append('Request query parameters omitted; endpoint identity only')
     if not location:
         notes.append('External location is dynamic or unresolved')
+    # Shared vocabulary with partition parsing: a SharePoint document read
+    # through Web.Contents is a file, and File.Contents is named by its type.
+    kind = refine_source_type(kind, location)
+    if kind == 'SharePoint file':
+        mode = 'file'
     if mode in {'files', 'hierarchy', 'lists'}:
         notes.append('Collection location identified; individual item selection unresolved')
     obj = re.split(r'[/\\]', location.rstrip('/\\'))[-1] if mode == 'file' and location else ''

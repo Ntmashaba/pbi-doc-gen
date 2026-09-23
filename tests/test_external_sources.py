@@ -86,7 +86,7 @@ class ExternalSourceTests(unittest.TestCase):
     def test_merge_and_removed_columns_retain_potential_input(self):
         defs = {'Lookup': 'Csv.Document(File.Contents("C:\\lookup.csv"))'}
         rows = self.rows('let S=Sql.Database("sql","db",[Query="SELECT * FROM dbo.Sales"]), J=Table.NestedJoin(S,{"ID"},Lookup,{"ID"},"L"), R=Table.RemoveColumns(J,{"L"}) in R', defs)
-        self.assertEqual({r['sourceType'] for r in rows}, {'SQL Server','File'})
+        self.assertEqual({r['sourceType'] for r in rows}, {'SQL Server','CSV file'})
         for row in rows:
             self.assertTrue(any('Merge/join' in e for e in row['preparationEffects']))
             self.assertTrue(any('Column selection' in e for e in row['preparationEffects']))
