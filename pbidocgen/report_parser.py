@@ -109,6 +109,9 @@ def _source_entity(expr, aliases: dict):
     return None
 
 
+FORMATTING = "formatting"
+
+
 def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
     """Find every Column/Measure/HierarchyLevel/Aggregation reference."""
     if isinstance(node, dict):
@@ -172,7 +175,9 @@ def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
         for key, v in node.items():
             if key in _FIELD_KINDS:
                 continue
-            _collect_field_refs(v, aliases, out, context)
+            # objects / vcObjects hold formatting: conditional colours, titles,
+            # data labels. A field there drives formatting, not the data shown.
+            _collect_field_refs(v, aliases, out, FORMATTING if key in ("objects", "vcObjects") else context)
     elif isinstance(node, list):
         for v in node:
             _collect_field_refs(v, aliases, out, context)
@@ -240,11 +245,14 @@ def _summarize_condition(f: dict) -> str | None:
 # --------------------------------------------------------------------------
 
 def parse_report(report_path: str | Path) -> dict:
+    from .custom_visuals import from_folder as custom_visual_names
     root = Path(report_path)
     from .extracted_report import is_legacy_layout, parse_legacy_layout  # avoids an import cycle
     if is_legacy_layout(root):
         # PBIP saved before PBIR: one report.json with every page and visual.
-        return parse_legacy_layout(root, root.name.replace(".Report", ""))
+        report = parse_legacy_layout(root, root.name.replace(".Report", ""))
+        report["customVisuals"] = custom_visual_names(root)
+        return report
     definition = root / "definition"
     if not definition.exists():
         # tolerate being handed the definition folder itself
@@ -263,9 +271,15 @@ def parse_report(report_path: str | Path) -> dict:
 
     # ---- report-level filters ------------------------------------------
     report_json = _load(definition / "report.json") or {}
-    if not report_json or not (definition / "pages").is_dir():
+    if not (definition / "pages").is_dir():
         warnings.append({"severity": "warning", "category": "Incomplete report",
-                         "message": "Report metadata or PBIR pages are missing/unreadable; deletion candidates cannot be assessed."})
+                         "message": "PBIR pages are missing/unreadable; deletion candidates cannot be assessed."})
+    elif not report_json:
+        # report.json holds report-level filters and settings only. Without it
+        # there are no report-level filters to miss, so pages still decide usage.
+        warnings.append({"severity": "info", "category": "Report settings missing",
+                         "message": "definition/report.json is missing or unreadable; report-level filters and "
+                                    "settings are not documented. Page and visual usage is unaffected."})
     aliases: dict = {}
     _collect_aliases(report_json, aliases)
     report_fields = []
@@ -420,4 +434,5 @@ def parse_report(report_path: str | Path) -> dict:
         "bookmarks": bookmarks_out,
         "manifest": [],
         "warnings": warnings,
+        "customVisuals": custom_visual_names(root.parent if root.name == "definition" else root),
     })

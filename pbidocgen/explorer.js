@@ -213,6 +213,9 @@ const CUSTOM_VISUAL_NAMES={PowerApps:'Power Apps',FlowVisual:'Power Automate'};
 function visualTypeName(t){
  t=String(t||'Visual');
  if(VISUAL_TYPE_NAMES[t]) return VISUAL_TYPE_NAMES[t];
+ // Display name from the report's own custom visual package (Mapbox Visual).
+ const packaged=(typeof DATA!=='undefined'&&DATA.report&&DATA.report.customVisuals||{})[t];
+ if(packaged) return packaged+' (custom)';
  const base=t.replace(/_?PBI_CV_[0-9A-Fa-f_]+$/,'').replace(/_?[0-9A-Fa-f]{8}_?[0-9A-Fa-f]{4}_?[0-9A-Fa-f]{4}_?[0-9A-Fa-f]{4}_?[0-9A-Fa-f]{12}$/,'').replace(/[0-9A-F]{32}$/,'').replace(/\d{8,}$/,'');
  const custom=base!==t;
  if(custom&&!base) return 'Custom visual';
@@ -479,6 +482,9 @@ function sourceName(g){
   if(FILE_SOURCE_TYPES.has(g.sourceType)) return g.object||String(g.location||'').split(/[\/\\]/).filter(Boolean).pop()||'Unresolved file';
   // Same rule as source_labels.source_name: a dataflow is known by its entity.
   if(/dataflow$/.test(g.sourceType)) return g.object||g.database||'Unresolved entity';
+  // A SharePoint list picked by ID: its title is not in the report.
+  if(g.sourceType==='SharePoint list'&&/^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i.test(g.object||''))
+    return `List ID ${g.object.replace(/[{}]/g,'').slice(0,8)}… (title not in report)`;
   const obj=g.schema&&g.object?`${g.schema}.${g.object}`:g.object;
   return [g.database,obj].filter(Boolean).join(' · ')||g.server||g.location||'Unresolved';
 }

@@ -14,6 +14,19 @@ from __future__ import annotations
 from .page_references import attach_report_locations
 
 
+def _formatting_only(entry: dict) -> bool:
+    locations = entry.get("locations") or []
+    return bool(locations) and all((l.get("description") or "").startswith("Formatting rule") for l in locations)
+
+
+def _broken(entry: dict, ref: str, reason: str) -> str:
+    if _formatting_only(entry):
+        # Only formatting uses it (a colour rule, a dynamic title): the visual
+        # still shows data, but that formatting is broken.
+        return f"A formatting rule refers to {ref}, but {reason}." + _used_on(entry)
+    return f"Report references {ref} but {reason}." + _used_on(entry)
+
+
 def _used_on(entry: dict, limit: int = 3) -> str:
     """" Used on: Page — Visual: x; ..." so a broken binding says where to fix it."""
     places = []
@@ -75,7 +88,7 @@ def link(model: dict, report: dict) -> dict:
             used_tables_direct.add(table)
             warnings.append({
                 "severity": "warning", "category": "Broken binding",
-                "message": f"Report references {table}[{field}] but the model has no such column or measure." + _used_on(entry),
+                "message": _broken(entry, f"{table}[{field}]", "the model has no such column or measure"),
             })
         else:
             ref = f"{table}[{field}]" if table else f"[{field}]"
@@ -83,7 +96,7 @@ def link(model: dict, report: dict) -> dict:
                       if table else "no measure with that name exists in the model")
             warnings.append({
                 "severity": "warning", "category": "Broken binding",
-                "message": f"Report references {ref} but {reason}." + _used_on(entry),
+                "message": _broken(entry, ref, reason),
             })
         resolved_manifest.append({**entry, "resolution": resolution, "homeTable": home})
 

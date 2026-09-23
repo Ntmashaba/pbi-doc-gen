@@ -40,7 +40,8 @@ def attach_report_locations(report):
             note(f, page, f.get("level", "page"), f.get("level", "page").capitalize() + " filter or expression")
         for v in page["visuals"]:
             for f in v["fields"]:
-                note(f, page, "visual", "Visual: " + (v.get("title") or v["type"]), v["id"])
+                prefix = "Formatting rule in visual: " if f.get("context") == "formatting" else "Visual: "
+                note(f, page, "visual", prefix + (v.get("title") or v["type"]), v["id"])
         for f in report["reportFilters"] + page["filters"]:
             filter_rows.append(dict(f, **page_ref(report, page), pageLabel=page["label"]))
     if not report["pages"]:

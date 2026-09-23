@@ -128,5 +128,40 @@ class ReportTests(unittest.TestCase):
         warnings = [w for w in link(model, report)["warnings"] if w["category"] == "Broken binding"]
         self.assertEqual(warnings, [])
 
+
+class OpenItemTests(unittest.TestCase):
+    def test_formatting_only_reference_is_named_as_such(self):
+        from pbidocgen.linker import _broken
+        entry = {"locations": [{"page": "P", "description": "Formatting rule in visual: Bar"}]}
+        self.assertTrue(_broken(entry, "T[F]", "x").startswith("A formatting rule refers to T[F]"))
+        entry["locations"].append({"page": "P", "description": "Visual: Bar"})
+        self.assertTrue(_broken(entry, "T[F]", "x").startswith("Report references T[F]"))
+
+    def test_fields_under_objects_are_formatting(self):
+        refs = []
+        col = {"Column": {"Expression": {"SourceRef": {"Entity": "Sales"}}, "Property": "Colour"}}
+        _collect_field_refs({"singleVisual": {"objects": {"dataPoint": [col]}, "projections": [col]}}, {}, refs, "q")
+        self.assertEqual(sorted(r["context"] for r in refs), ["formatting", "q"])
+
+    def test_missing_report_json_does_not_block_cleanup(self):
+        from pbidocgen.report_parser import parse_report
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "S.Report" / "definition"
+            write(root / "pages" / "pages.json", {"pageOrder": ["p"]})
+            write(root / "pages" / "p" / "page.json", {"displayName": "P"})
+            report = parse_report(root.parent)
+        self.assertEqual([(w["severity"], w["category"]) for w in report["warnings"]], [("info", "Report settings missing")])
+
+    def test_custom_visual_display_names(self):
+        from pbidocgen.custom_visuals import from_folder, from_pbix
+        package = {"visual": {"name": "wordCloud", "displayName": "WordCloud 1.7.1"}}
+        with tempfile.TemporaryDirectory() as d:
+            write(Path(d) / "CustomVisuals" / "WordCloud1447959067750" / "package.json", package)
+            self.assertEqual(from_folder(d), {"WordCloud1447959067750": "WordCloud"})
+            pbix = Path(d) / "r.pbix"
+            with zipfile.ZipFile(pbix, "w") as z:
+                z.writestr("Report/CustomVisuals/PBI_CV_1/package.json", json.dumps({"visual": {"displayName": "Play Axis"}}))
+            self.assertEqual(from_pbix(pbix), {"PBI_CV_1": "Play Axis"})
+
 if __name__ == "__main__":
     unittest.main()

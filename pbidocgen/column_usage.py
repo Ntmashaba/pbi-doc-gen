@@ -367,7 +367,8 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         legacy = report.get("legacyLayout")
         # The legacy-layout caution is scoped below instead of blocking everything.
         issues.update(w["message"] for w in report["warnings"]
-                      if not (legacy and w.get("category") == "Legacy report layout"))
+                      if w.get("severity") != "info"
+                      and not (legacy and w.get("category") == "Legacy report layout"))
         if legacy:
             # Bookmark fields already count as used (Keep); only their page is
             # uncertain, which does not change a deletion decision.

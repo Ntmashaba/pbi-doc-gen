@@ -194,11 +194,14 @@ Run either with an output folder to get an HTML page.
 - `COUNTROWS(T)`/`ISEMPTY(T)` do not make every column of T a dependency; `COUNTROWS(DISTINCT(T))` still does.
 - UI: slate/indigo palette (tokens at the end of `template.html` and `catalog.html`), Primary sources has its own tab, decorative visuals fold in the Pages view, readable visual and custom-visual names, raw page IDs only in tooltips.
 
+### Resolved after the final review (last commit on this branch)
+
+- Formatting-only references: a reference used only in `objects`/`vcObjects` reads "A formatting rule refers to T[F]…", and locations say "Formatting rule in visual: …" (Regional Sales `Page Details[Facility]`).
+- Custom visual display names come from `CustomVisuals/<id>/package.json` in the PBIX or the PBIP report folder (Mapbox Visual, Play Axis, Correlation plot).
+- A PBIR report without `report.json` is an info note (no report-level filters), not a cleanup blocker; missing pages still block.
+- SharePoint lists picked by ID read "List ID 7c1b0c9e… (title not in report)".
+- CI: `docs/github-actions-ci.yml` (copy to `.github/workflows/ci.yml`; remote tools cannot write `.github`). Linux: suite + Chromium checks. Windows: suite + `tests/samples/check_pbix_samples.py` over the 29 pbi-tools extracts at a pinned commit. A real PBIX extraction still needs Power BI Desktop, which hosted runners lack.
+
 ### Still open
 
-- Formatting-only references: warnings say where a reference is used, not that it comes from a formatting rule.
-- Custom visual display names from the report's custom visual list.
-- A PBIR report without `report.json` blocks all cleanup.
-- Windows CI job running the PBIX batch on the samples.
-- Untested against real files: DirectQuery to a live database, live connections to a published dataset. The synthetic samples cover the M patterns only.
-- SharePoint lists referenced only by GUID show the GUID (the title is not in the report).
+- DirectQuery against a live database and live connections to a published dataset are covered by the synthetic sample only; test with a real file when one is available.

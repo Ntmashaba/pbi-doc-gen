@@ -15,6 +15,7 @@ from .catalog import build_catalog, read_metadata, validate_metadata, describe_h
 from .extracted_report import parse_extracted_report
 from .model_parser import parse_model
 from .pbitools_folder import assemble, is_folder_model
+from .custom_visuals import from_pbix as custom_visuals_from_pbix
 from .report_parser import parse_report
 from .renderer import build_payload, render_html
 from .linker import link
@@ -110,6 +111,8 @@ def load_extracted(folder, source, has_embedded_model):
     if model is None:
         report['warnings'].append(dict(severity='warning', category='External semantic model',
             message='No embedded semantic model was extracted. This is report-only documentation; remote model tables, measures and data sources are not available.'))
+    # Custom visual display names ship inside the PBIX (Report/CustomVisuals/).
+    report['customVisuals'] = {**custom_visuals_from_pbix(source), **report.get('customVisuals', {})}
     return model, report
 
 

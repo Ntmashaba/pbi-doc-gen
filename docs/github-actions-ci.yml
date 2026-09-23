@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Unit and generated-page tests
+        run: python tests/run_ci.py
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Browser checks
+        run: |
+          python tests/build_browser_fixture.py
+          node tests/browser_review.cjs /tmp/pbidocgen-browser.html
+          node tests/browser_catalog.cjs
+
+  windows:
+    # pbi-tools needs Power BI Desktop to extract a PBIX model, which hosted
+    # runners do not have. This job runs the suite on Windows paths and line
+    # endings, then the 29 reports pbi-tools already extracted in
+    # pbi-tools/pbix-samples through the batch's load/link/render path.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Unit and generated-page tests
+        run: python tests/run_ci.py
+      - name: Fetch pbi-tools/pbix-samples (pinned)
+        shell: bash
+        run: |
+          git clone --filter=blob:none https://github.com/pbi-tools/pbix-samples pbix-samples-src
+          git -C pbix-samples-src checkout 84a442248b7259de7f5dbac0e25f0c33e3c9fd6a
+      - name: Real extracted reports
+        run: python tests/samples/check_pbix_samples.py pbix-samples-src
