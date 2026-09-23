@@ -30,14 +30,22 @@ view is a tab inside one of them:
 | Section | Views |
 |---|---|
 | Overview | Overview |
-| Data & sources | Tables, Columns, Measures, Relationships, Lineage, Sources, Primary sources, Security |
-| Pages & visuals | Pages, Page layout, Filters, Field manifest |
+| Data & sources | Tables, Columns, Measures, Relationships, Lineage, Sources, Security |
+| Pages & visuals | Page layout, Pages, Filters, Field manifest |
 | Impact & changes | Impact inspector, Usage matrix, Usage, Compare extracts |
 | Review issues | Cleanup review, Warnings |
 | Report details | Report details |
 
 A slim bar above each view holds the single report-page selector and an analysis
 coverage badge; select the badge to see what limited the analysis.
+
+**Sources** lists one row per external source, with the report pages that use it
+as tags; select a source for its connection, queries, model tables, evidence and
+code. The page-level inventories (the former Primary sources view, source objects
+with code, and all M queries) and their CSV exports are collapsible sections below.
+**Page layout** colours each visual by kind, lists the measures (Σ) and columns it
+uses, and flags unresolved bindings. **Measures** are grouped by display folder and
+show pages used, format string and a one-line DAX preview without expanding.
 
 ## Explore usage by report page
 

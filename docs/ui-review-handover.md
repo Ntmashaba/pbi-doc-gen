@@ -41,7 +41,14 @@ The two parsers are still separate. Only their vocabulary is shared. Merging the
 
 Not done from C: sharing tokens and components with the hub (`catalog.html`). Mobile (B8) is improved by having six buttons instead of 20 but still takes about 180px; a menu button remains for step 4.
 
-Next is plan step 3: B3, B4, B6.
+### Step 3 (B3, B4, B6)
+
+- **B3:** Sources and Primary sources are one view. It opens with one row per external source (grouped from `primarySources` rows by type, server, database, schema, object and location) with pages as tags, reporting usage and identification status. Selecting a source opens the inspector with connection details, pages, model tables, queries, evidence and the M/SQL code. The page-level Primary sources table, source objects (with code) and the M query export remain as collapsed sections, so every CSV export is unchanged. `switchTab('primary-sources')` still works: it opens Sources with that section expanded.
+- **B4:** Page layout is the first tab of Pages & visuals. Boxes are coloured by visual kind (card, slicer, table, chart, text/image), list the measures (Σ) and columns each visual uses, and show a "!" for bindings the analyser could not resolve (same messages as Cleanup review, so `Date[Calendar]` is flagged on "Revenue vs LY"). The inspector explains the unresolved binding.
+- **B6:** Measure rows show "used on N pages", the format string and a one-line DAX preview while collapsed, and are grouped by display folder (unfiled last). Search covers names, folders and DAX. The retail sample now has display folders on six measures.
+- **Browser test:** the export loop expands a collapsed section before clicking its button.
+
+Next is plan step 4: B7, B8 and the hub index (D).
 
 ## Environment notes
 

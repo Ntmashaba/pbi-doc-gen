@@ -188,8 +188,8 @@ const reportManifest = () => (has.linked ? L.manifest : (R?.manifest||[])).map(e
 /* Six top-level sections; every existing view is a sub-tab of one of them. */
 const SECTIONS = [
   {id:"overview", label:"Overview",         tabs:["overview"]},
-  {id:"data",     label:"Data & sources",   tabs:["tables","columns","measures","rels","lineage","sources","primary-sources","security"]},
-  {id:"visuals",  label:"Pages & visuals",  tabs:["pages","layout","filters","manifest"]},
+  {id:"data",     label:"Data & sources",   tabs:["tables","columns","measures","rels","lineage","sources","security"]},
+  {id:"visuals",  label:"Pages & visuals",  tabs:["layout","pages","filters","manifest"]},
   {id:"changes",  label:"Impact & changes", tabs:["impact","matrix","usage","compare"]},
   {id:"review",   label:"Review issues",    tabs:["cleanup","warnings"]},
   {id:"details",  label:"Report details",   tabs:["report-details"]},
@@ -225,7 +225,10 @@ function subTabs(id){
       : `<button class="subtab disabled" title="Not available in ${MODE} mode" tabindex="-1">${esc(t.label)}</button>`;
   }).join("")}</div>`;
 }
+let openPrimarySources = false;
 function switchTab(id){
+  // Primary sources were merged into Sources; keep the old id working.
+  if(id==="primary-sources"){ id="sources"; openPrimarySources=true; }
   const tab = TABS.find(t=>t.id===id);
   if(!tab || !tab.avail) return;
   rememberView();
@@ -244,8 +247,7 @@ function switchTab(id){
   if(id==="columns") filterColumns();
   if(id==="tables") fTbl(document.getElementById("table-search").value);
   if(id==="manifest") fMan(document.getElementById("manifest-search").value);
-  if(id==="sources") filterSourceObjects();
-  if(id==="primary-sources") filterPrimarySources();
+  if(id==="sources"){ filterSourceList(); filterSourceObjects(); filterPrimarySources(); }
   if(id==="measures") fMea(document.getElementById("measure-search").value);
 }
 
@@ -612,31 +614,45 @@ function fTbl(q){
 
 /* ============================================================ measures */
 function rMeasures(){
-  const cards = M.measures.filter(m=>pageScope==='*'||(m.pageUsage||[]).some(inPageScope)).map(m=>`
-    <details id="mea-${slug(m.name)}">
-      <summary>${esc(m.name)}
-        ${has.linked ? (m.usedInReport?'<span class="badge b-direct">used in report</span>':'<span class="badge b-none">not used in report</span>') : ""}
-        <span class="mut" style="font-weight:400;margin-left:auto">${tblLink(m.table)}</span></summary>
+  const pagesOf = m => new Set((m.pageUsage||[]).filter(r=>r.pageId).map(r=>r.pageId)).size;
+  const preview = e => { const one=String(e||"").replace(/\s+/g," ").trim(); return one.length>90?one.slice(0,89)+"…":one; };
+  const card = m=>`
+    <details class="measure" id="mea-${slug(m.name)}" data-search="${esc([m.name,m.table,m.displayFolder,m.expression,m.description].join(" ").toLowerCase())}">
+      <summary><span class="mea-name">${esc(m.name)}</span>
+        ${has.linked ? (m.usedInReport?`<span class="badge b-direct">used on ${pagesOf(m)} ${pagesOf(m)===1?"page":"pages"}</span>`:'<span class="badge b-none">not used in report</span>') : ""}
+        ${m.formatString?`<span class="ref" title="Format string">${esc(m.formatString)}</span>`:""}
+        <span class="mut" style="font-weight:400;margin-left:auto">${esc(m.table)}</span>
+        <span class="mea-preview">${esc(preview(m.expression))}</span></summary>
       <div class="body">
         ${m.description?`<p class="mut" style="margin:.5rem 0">${esc(m.description)}</p>`:""}
         <pre class="code" style="margin-top:.6rem">${hlDAX(m.expression)}</pre>
         <table class="t" style="margin-top:.6rem"><tbody>
-          <tr><td class="mut" style="width:170px">Depends on measures</td><td>${m.dependsOnMeasures.map(meaLink).join(", ")||"—"}</td></tr>
+          <tr><td class="mut" style="width:170px">Home table</td><td>${tblLink(m.table)}</td></tr>
+          <tr><td class="mut">Depends on measures</td><td>${m.dependsOnMeasures.map(meaLink).join(", ")||"—"}</td></tr>
           <tr><td class="mut">Depends on columns</td><td>${m.dependsOnColumns.map(c=>`<span class="ref">${esc(c)}</span>`).join(" ")||"—"}</td></tr>
           <tr><td class="mut">All tables touched</td><td>${m.allTables.map(tblLink).join(", ")||"—"}</td></tr>
           ${m.pageUsage?.length?`<tr><td class="mut">Usage by report page</td><td class="mut">${m.pageUsage.filter(inPageScope).map(r=>`${esc(pageLabel(r))}: ${esc(r.usage)}`).join("<br>")}</td></tr>`:""}
           ${m.formatString?`<tr><td class="mut">Format</td><td><span class="ref">${esc(m.formatString)}</span></td></tr>`:""}
         </tbody></table>
       </div>
-    </details>`).join("");
+    </details>`;
+  const measures = M.measures.filter(m=>pageScope==='*'||(m.pageUsage||[]).some(inPageScope));
+  // Group by display folder when the model uses folders; unfiled measures last.
+  const folders = [...new Set(measures.map(m=>m.displayFolder||""))].sort((a,b)=>(!a)-(!b)||a.localeCompare(b));
+  const grouped = folders.length>1||folders[0]
+    ? folders.map(f=>`<section class="mea-group"><h2>${esc(f||"No display folder")} <span class="mut">${measures.filter(m=>(m.displayFolder||"")===f).length}</span></h2>${measures.filter(m=>(m.displayFolder||"")===f).map(card).join("")}</section>`).join("")
+    : measures.map(card).join("");
   return `${coupler()}<h1>Measures</h1>
-  <input id="measure-search" class="search" placeholder="Search measures…" oninput="fMea(this.value)">
-  <div id="mea-list">${cards}</div>`;
+  <input id="measure-search" class="search" placeholder="Search names, folders or DAX…" aria-label="Search measures" oninput="fMea(this.value)">
+  <div id="mea-list">${grouped}</div>`;
 }
 function fMea(q){
   q=q.toLowerCase();
-  document.querySelectorAll("#mea-list > details").forEach(d=>{
-    d.style.display = d.querySelector("summary").textContent.toLowerCase().includes(q)?"":"none";
+  document.querySelectorAll("#mea-list details.measure").forEach(d=>{
+    d.style.display = (d.dataset.search||"").includes(q)?"":"none";
+  });
+  document.querySelectorAll("#mea-list .mea-group").forEach(g=>{
+    g.style.display = [...g.querySelectorAll("details.measure")].some(d=>d.style.display!=="none")?"":"none";
   });
 }
 
@@ -686,12 +702,17 @@ function drawERD(){
 
 /* ============================================================ sources */
 function rSources(){
+  // Sources and Primary sources are one view: a source list first, then the
+  // page-level inventories (and their CSV exports) as collapsible sections.
+  const openPrimary = openPrimarySources; openPrimarySources = false;
   return `${coupler()}<h1>Data sources</h1>
-    <p><button class="chip" onclick="switchTab('primary-sources')">View primary sources only</button></p>
-    <p class="sub">Source objects used by each report page, traced through supported M and embedded SQL. Objects may be tables or views; no database connection is made.</p>
-    <div class="card"><button class="chip" onclick="downloadQueryCsv()">Export all M queries CSV</button>
-    <p class="mut">${(DATA.sourceQueries||[]).length} M queries and shared expressions across the complete model. This three-column export is independent of page selection.</p></div>
-    ${rSourceObjects()}`;
+    <p class="sub">One row per external source, traced through supported M and embedded SQL. Select a source for its connection, queries, model tables, pages and code. No database connection is made.</p>
+    ${rSourceList()}
+    <h2>Detailed inventories</h2>
+    <details id="src-primary"${openPrimary?" open":""}><summary>External inputs by report page (primary sources)</summary><div class="body">${rPrimarySources()}</div></details>
+    <details id="src-objects"><summary>Source objects by report page, with code</summary><div class="body">${rSourceObjects()}</div></details>
+    <details id="src-queries"><summary>All M queries</summary><div class="body"><button class="chip" onclick="downloadQueryCsv()">Export all M queries CSV</button>
+    <p class="mut">${(DATA.sourceQueries||[]).length} M queries and shared expressions across the complete model. This three-column export is independent of page selection.</p></div></details>`;
 }
 
 /* ============================================================ security */
