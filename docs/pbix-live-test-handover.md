@@ -156,3 +156,19 @@ In priority order.
 ## Tests added
 
 `tests/test_live_findings.py`, 11 tests: modern `report.json` metadata; visual-calculation DAX; model without a name and free-form payloads; forecast outputs; auto date hierarchy; single-file legacy `report.json` (page order, bookmarks, groups); Q&A answers; pbi-tools bookmark folders; row-context and local DAX columns; PBIR read from a PBIX (including the model name); unsafe zip paths refused. `tests/check_catalog.cjs` covers the new folder grouping.
+
+## More samples: pbi-tools/pbix-samples (commit 179fb48)
+
+Ran the 29 pre-extracted reports in [pbi-tools/pbix-samples](https://github.com/pbi-tools/pbix-samples) (Microsoft monthly demos 2018-2020 plus sample reports) through load, link and render, and opened every tab of every page in Chromium (no script errors).
+
+| Measure | Before | After |
+|---|---|---|
+| Reports that loaded with tables | 8 of 29 | 29 of 29 |
+| Unknown source rows | 904 | 0 |
+| Broken bindings | 150 | 55 |
+
+Sources now covered: Excel, SQL Server (incl. native queries), OData, Web/API, CSV, Azure Blob Storage, SharePoint; Snowflake via a separate sample. The remaining broken bindings repeat across the monthly demos (report filters on `ProductCatalog`, `Months`, an old `LocalDateTable`) and look genuine.
+
+Also downloaded to `pbix-samples/` for a Windows batch run: seven Microsoft PBIX files (OData, CSV, SQL, Web API) and `Snowflake_Usage_Sample.pbix` (no licence; local use only). See `pbix-samples/SOURCE-more.txt`.
+
+Still untested: DirectQuery, live connections to a published dataset, Databricks, dataflows. No public PBIX was found; a synthetic PBIP fixture would cover them.
