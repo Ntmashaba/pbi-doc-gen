@@ -164,7 +164,13 @@ TRANSFORMS = {'Table.SelectRows', 'Table.SelectColumns', 'Table.RemoveColumns', 
               'Table.Sort', 'Table.Distinct', 'Table.Buffer', 'Table.FirstN', 'Table.LastN',
               'Table.Skip', 'Table.PromoteHeaders', 'Table.DemoteHeaders', 'Table.ReplaceValue',
               'Table.ExpandTableColumn', 'Table.ExpandRecordColumn', 'Table.RemoveRowsWithErrors',
-              'Table.ReplaceErrorValues', 'Table.AddIndexColumn', 'Table.Unpivot', 'Table.UnpivotOtherColumns'}
+              'Table.ReplaceErrorValues', 'Table.AddIndexColumn', 'Table.Unpivot', 'Table.UnpivotOtherColumns',
+              # Row-level reshaping: the rows still come from the first argument.
+              'Table.AddColumn', 'Table.DuplicateColumn', 'Table.SplitColumn', 'Table.CombineColumns',
+              'Table.Group', 'Table.Pivot', 'Table.FillDown', 'Table.FillUp', 'Table.Transpose',
+              'Table.RemoveRows', 'Table.RemoveFirstN', 'Table.RemoveLastN', 'Table.Range',
+              'Table.AlternateRows', 'Table.RemoveMatchingRows', 'Table.ExpandListColumn',
+              'Table.AddKey', 'Table.RenameColumns', 'Table.TransformColumnNames', 'Table.Repeat'}
 COMBINES = {'Table.Combine', 'Table.Join', 'Table.NestedJoin'}
 DATAFLOWS = {'PowerBI.Dataflows': 'Power BI dataflow', 'PowerPlatform.Dataflows': 'Power Platform dataflow'}
 # Data typed into Power Query ("Enter data") or built from literals: no external source.
@@ -326,7 +332,9 @@ class Tracer:
                 # argument calls code, inspect it conservatively for more input.
                 extra = []
                 for arg in arg_tokens[1:]:
-                    if any(t.kind == 'id' and i + 1 < len(arg) and arg[i + 1].value == '(' for i, t in enumerate(arg)):
+                    # Inspect arguments that call code or name another query.
+                    if any(t.kind == 'id' and ((i + 1 < len(arg) and arg[i + 1].value == '(') or t.value in self.definitions)
+                           for i, t in enumerate(arg)):
                         extra.append(self.evaluate(arg, resolve))
                 result = union([first] + extra)
                 if fn in READERS:
@@ -395,6 +403,10 @@ class Tracer:
                 candidate = resolve(t.value)
                 if candidate.connections or candidate.objects:
                     values.append(candidate)
+        if ts[0].kind == 'id' and ts[0].value == 'each':
+            # A row function (each ...) computes values per row; any query it
+            # reads is kept above, so it is not a coverage gap by itself.
+            return union(values)
         return union(values, 'Unsupported/dynamic M expression; source coverage is incomplete')
 
     def internal(self, fn, arg_tokens, resolve):

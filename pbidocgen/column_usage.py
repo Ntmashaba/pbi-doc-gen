@@ -21,6 +21,12 @@ SOURCE_NOTE = ("Partition source is best effort. Source column is the model inpu
                "not verified physical lineage through Power Query renames or transformations.")
 
 
+def _names_table(text: str, table: str) -> bool:
+    quoted = "'" + table.replace("'", "''") + "'"
+    return quoted.casefold() in text.casefold() or bool(
+        re.fullmatch(r"[^\W\d]\w*", table) and re.search(r"(?<![\w'])" + re.escape(table) + r"(?![\w'])", text, re.I))
+
+
 def build_column_usage(model: dict, report: dict | None) -> dict:
     tables = {t["name"]: t for t in model["tables"]}
     table_lookup = {t.casefold(): t for t in tables}
@@ -28,6 +34,9 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
     col_lookup = {(t.casefold(), c.casefold()): key for key in columns for _, t, c in [key]}
     measures = {("m", m["table"], m["name"]): m for m in model["measures"]}
     mea_lookup = {key[2].casefold(): key for key in measures}
+    by_column_name = defaultdict(list)
+    for key in columns:
+        by_column_name[key[2].casefold()].append(key)
     graph = defaultdict(set)
     table_deps = defaultdict(set)
     reasons = defaultdict(set)
@@ -54,6 +63,8 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
 
     def refs(expression, home, local_columns=False):
         text = mask_dax(expression or "")
+        # Columns the expression creates itself: ADDCOLUMNS(T, "__x", ...) then [__x].
+        local_names = {m.casefold() for m in re.findall(r'"((?:[^"]|"")+)"', expression or "")}
         found, spans = set(), []
         for match in _REF.finditer(text):
             field = match["field"].replace("]]", "]")
@@ -72,10 +83,29 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                 if local_columns:
                     key = col_lookup.get((home.casefold(), field.casefold()))
                 key = key or mea_lookup.get(field.casefold())
+                if not key and field.casefold() in local_names:
+                    spans.append(match.span())
+                    continue  # a column defined inside this expression
+                if not key:
+                    # Row context: an unqualified [col] names a column of the
+                    # table being iterated. Take the unique column with that
+                    # name, or the one in a table this expression names.
+                    candidates = by_column_name.get(field.casefold(), [])
+                    if len(candidates) > 1:
+                        candidates = [k for k in candidates if _names_table(text, k[1])] or candidates
+                    if len(candidates) == 1:
+                        key = candidates[0]
+                    elif candidates:
+                        for k in candidates:
+                            add_issue(f"Ambiguous DAX reference [{field}]", k[1])
+                        spans.append(match.span())
+                        continue
             if key:
                 found.add(key)
             else:
-                add_issue(f"Unresolved DAX reference {table}[{field}]", table)
+                # Calculated columns, RLS filters and calculated tables have a
+                # home table; an unresolved bare [col] there concerns that table.
+                add_issue(f"Unresolved DAX reference {table}[{field}]", table or (home if local_columns else ""))
             spans.append(match.span())
         chars = list(text)
         for start, end in spans:
@@ -229,7 +259,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
             key = col_lookup.get((table.casefold(), field))
             if key:
                 return key
-        if field:
+        if field and not binding.get("runtime"):  # Q&A answers are re-derived at runtime
             add_issue(f"Unresolved report binding {binding.get('table') or '?'}[{binding.get('field')}]",
                       binding.get("table"))
         return None

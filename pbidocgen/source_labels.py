@@ -65,6 +65,8 @@ def file_name(location: str) -> str:
 
 
 FILE_TYPES = {"SharePoint file", "Excel workbook", "CSV file", "File"}
+# Cloud storage addressed by URL: name a single file by its file name.
+STORAGE_TYPES = {"Azure Blob Storage", "Azure Data Lake"}
 DATAFLOW_TYPES = {"Power BI dataflow", "Power Platform dataflow"}
 
 
@@ -73,6 +75,8 @@ def source_name(src: dict) -> str:
     source_type = src.get("sourceType") or ""
     location = src.get("location") or src.get("detail") or src.get("server") or ""
     if source_type in FILE_TYPES:
+        return file_name(location)
+    if source_type in STORAGE_TYPES and _extension(location):
         return file_name(location)
     if source_type in DATAFLOW_TYPES:
         return src.get("object") or src.get("database") or ""  # entity names beat workspace GUIDs

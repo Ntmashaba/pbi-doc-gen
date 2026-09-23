@@ -56,11 +56,21 @@ def load_extracted(folder, source, has_embedded_model):
     if has_embedded_model and model_path is None:
         raise ValueError('PBIX contains an embedded model but extraction produced no readable model definition')
     model = parse_model(model_path) if model_path else None
+    if model and model_path.name == 'database.json' and model.get('name') in (None, '', 'database'):
+        # pbi-tools' raw database.json often carries no model name.
+        model['name'] = source.stem
     report_root = folder / 'Report'
     if not report_root.exists():
         candidates = list(folder.glob('*.Report'))
         if len(candidates) == 1:
             report_root = candidates[0]
+    legacy = (report_root / 'sections').is_dir() or (report_root / 'report.json').is_file()
+    if not legacy and not (report_root / 'definition' / 'pages').is_dir():
+        # Newer PBIX files store the report as PBIR (Report/definition/...),
+        # which pbi-tools does not extract. Read it from the PBIX itself.
+        pbir = extract_pbir(source, folder / 'pbir.Report')
+        if pbir:
+            report_root = pbir
     if (report_root / 'definition' / 'pages').is_dir() or (report_root / 'pages').is_dir():
         report = parse_report(report_root)
         report['name'] = source.stem
@@ -70,6 +80,39 @@ def load_extracted(folder, source, has_embedded_model):
         report['warnings'].append(dict(severity='warning', category='External semantic model',
             message='No embedded semantic model was extracted. This is report-only documentation; remote model tables, measures and data sources are not available.'))
     return model, report
+
+
+PBIR_PREFIX = 'Report/definition/'
+PBIR_LIMIT = 200 * 1024 * 1024  # uncompressed bytes; a report definition is far smaller
+
+
+def extract_pbir(source, destination):
+    """Copy Report/definition/** out of a PBIX (a zip) without executing anything.
+
+    Returns the report root (containing definition/) or None when the PBIX has
+    no PBIR report. Only plain relative paths under Report/definition are
+    written, so a crafted archive cannot write elsewhere.
+    """
+    try:
+        archive = zipfile.ZipFile(source)
+    except (zipfile.BadZipFile, OSError):
+        return None
+    with archive:
+        members = [m for m in archive.infolist() if m.filename.replace('\\', '/').startswith(PBIR_PREFIX)
+                   and not m.is_dir()]
+        if not any('/pages/' in m.filename.replace('\\', '/') for m in members):
+            return None
+        if sum(m.file_size for m in members) > PBIR_LIMIT:
+            raise ValueError('PBIR report definition in the PBIX is unexpectedly large; refusing to extract it')
+        root = Path(destination)
+        for member in members:
+            relative = Path(*member.filename.replace('\\', '/').split('/')[1:])
+            if relative.is_absolute() or '..' in relative.parts or not relative.parts:
+                raise ValueError(f'Unsafe path in PBIX report definition: {member.filename}')
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(archive.read(member))
+    return root
 
 
 def output_name(source, root):

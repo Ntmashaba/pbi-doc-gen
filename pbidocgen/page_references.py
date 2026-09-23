@@ -25,7 +25,9 @@ def attach_report_locations(report):
         key = (binding.get("table"), binding["field"], binding.get("kind"), binding.get("hierarchy"))
         entry = manifest.setdefault(key, {"table": binding.get("table"), "field": binding["field"],
                                          "kind": binding.get("kind"), "hierarchy": binding.get("hierarchy"),
+                                         "runtime": bool(binding.get("runtime")),
                                          "usedIn": [], "locations": []})
+        entry["runtime"] = entry["runtime"] and bool(binding.get("runtime"))
         if ref not in entry["locations"]:
             entry["locations"].append(ref)
             entry["usedIn"].append(page_label(ref) + " — " + description)

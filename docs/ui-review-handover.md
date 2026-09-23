@@ -3,6 +3,8 @@
 **Branch:** `ui-review-fixes`, created from `pbi-doc-gen-pbix-batch` (`29730a8`).
 **Last updated:** 23 September 2026, 19:35 SAST.
 
+> **Next:** the live test on real PBIX and PBIP files and what remains to do are in [`pbix-live-test-handover.md`](pbix-live-test-handover.md).
+
 ## Status
 
 All findings from the review are done, including the source-parser merge, which was checked against nine public Power BI projects. 123 unit tests, both Chromium tests and the jsdom hub check pass.

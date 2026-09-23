@@ -24,7 +24,7 @@ a{color:var(--amber)}.card h3{margin:0 0 4px;font-size:1rem}.card small,.muted{c
 .badge{display:inline-block;font-size:.75rem;font-weight:600;padding:.08rem .45rem;border-radius:4px;white-space:nowrap}
 .b-ok{background:var(--directBg);color:var(--direct)}.b-warn{background:var(--possBg);color:var(--poss)}.b-bad{background:var(--noneBg);color:var(--none)}.b-other{background:var(--otherBg);color:var(--other)}
 .tags{display:flex;flex-wrap:wrap;gap:4px;margin:.5rem 0}
-.tag{font-size:.75rem;background:var(--panel2);border:1px solid var(--line2);border-radius:4px;padding:.05rem .4rem;color:var(--ink);cursor:pointer;font-family:inherit}
+.tag{font-size:.75rem;background:var(--panel2);border:1px solid var(--line2);border-radius:4px;padding:.05rem .4rem;color:var(--ink);cursor:pointer;font-family:inherit;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tag:hover{border-color:var(--ink3)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin:14px 0}.panel>summary{padding:.7rem 1rem}.panel .body{padding:0 1rem 1rem;overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:.85rem}th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid var(--line2);vertical-align:top;overflow-wrap:anywhere}
@@ -44,9 +44,11 @@ function groupParts(metadata){
  let loc=(metadata.reportLocation||'').trim();
  if(!loc) return ['Ungrouped'];
  if(/^https?:\/\//i.test(loc)){
-  try{const url=new URL(loc);const path=url.pathname.split('/').filter(Boolean);if(!url.pathname.endsWith('/'))path.pop();return [url.hostname,...path];}catch{return ['Ungrouped'];}
+  // Group by the folder the report is in, not its full path; an explicit
+  // catalogue folder (above) is the way to build deeper groups.
+  try{const url=new URL(loc);const path=url.pathname.split('/').filter(Boolean).map(p=>{try{return decodeURIComponent(p)}catch{return p}});if(!url.pathname.endsWith('/'))path.pop();return [path.pop()||url.hostname];}catch{return ['Ungrouped'];}
  }
- loc=loc.replace(/\\/g,'/');const parts=loc.split('/').filter(Boolean);if(!loc.endsWith('/'))parts.pop();return parts.length?parts:['Ungrouped'];
+ loc=loc.replace(/\\/g,'/');const parts=loc.split('/').filter(Boolean);if(!loc.endsWith('/'))parts.pop();return parts.length?[parts.pop()]:['Ungrouped'];
 }
 function locationLink(location){
  const value=(location||'').trim();
@@ -61,14 +63,14 @@ const MODE_LABEL={combined:'Model + report','semantic-only':'Model only','report
 function card(entry){
  const m=entry.metadata||{},loc=m.reportLocation||'',link=locationLink(loc),sum=entry.summary||{},c=sum.counts;
  const failed=batchReport?.files?.find(r=>r.filename===entry.filename&&r.status==='failed');
- const counts=c?[[c.tables,'tables'],[c.measures,'measures'],[c.pages,'pages']].filter(([n])=>n).map(([n,l])=>`${n} ${l}`).join(' · ')+(c.measures?` · ${sum.measuresDescribed} of ${c.measures} measures described`:''):'';
+ const counts=c?[[c.tables,'table'],[c.measures,'measure'],[c.pages,'page']].filter(([n])=>n).map(([n,l])=>`${n} ${l}${n===1?'':'s'}`).join(' · ')+(c.measures?` · ${sum.measuresDescribed} of ${c.measures} measures described`:''):'';
  const badges=[entry.mode?`<span class="badge b-other">${esc(MODE_LABEL[entry.mode]||entry.mode)}</span>`:'',
   sum.counts?(sum.coverageIssues?`<span class="badge b-warn">${sum.coverageIssues} analysis ${sum.coverageIssues===1?'issue':'issues'}</span>`:'<span class="badge b-ok">Full analysis coverage</span>'):'',
   sum.deletionCandidates?`<span class="badge b-bad">${sum.deletionCandidates} cleanup ${sum.deletionCandidates===1?'candidate':'candidates'}</span>`:'',
   sum.duplicateMeasureSets?`<span class="badge b-warn">${sum.duplicateMeasureSets} duplicate measure ${sum.duplicateMeasureSets===1?'set':'sets'}</span>`:''].join(' ');
  return `<article class="card"><h3><a href="${esc(entry.blobUrl||entry.href)}" target="_blank" rel="noopener">${esc(entry.title)}</a></h3>${failed?'<p><span class="badge b-bad">Latest batch failed</span> showing previous HTML</p>':''}<small>${esc(entry.filename)}${entry.generated?' · '+esc(entry.generated):''}</small>
   ${badges.trim()?`<p>${badges}</p>`:''}${counts?`<p class="muted">${esc(counts)}</p>`:''}
-  ${(sum.sources||[]).length?`<div class="tags">${sum.sources.map(s=>`<button class="tag" title="Show every report that uses this source" onclick="${esc('searchFor('+JSON.stringify(s.label)+')')}">${esc(s.label)}</button>`).join('')}</div>`:''}
+  ${(sum.sources||[]).length?`<div class="tags">${sum.sources.map(s=>`<button class="tag" title="${esc(s.label)}: show every report that uses this source" onclick="${esc('searchFor('+JSON.stringify(s.label)+')')}">${esc(s.label)}</button>`).join('')}</div>`:''}
   ${loc?`<p class="location">Original location<br>${link?`<a href="${esc(link)}" target="_blank" rel="noopener">${esc(loc)}</a>`:esc(loc)}</p>`:'<p class="muted location">No report location recorded</p>'}${(m.connections||[]).filter(c=>c.username).map(c=>`<p class="location">${esc(c.connectionName||c.server||c.sourceType)}<br>Account: <strong>${esc(c.username)}</strong></p>`).join('')}${entry.warning?`<p>${esc(entry.warning)}</p>`:''}</article>`;
 }
 function searchFor(text){const box=document.getElementById('search');box.value=text;renderCatalog();box.focus();}

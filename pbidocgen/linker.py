@@ -48,6 +48,10 @@ def link(model: dict, report: dict) -> dict:
             resolution, home = "column", table
             used_columns.add((table, field))
             used_tables_direct.add(table)
+        elif entry.get("runtime"):
+            # Q&A visuals re-answer their question at runtime; a stale saved
+            # answer is not a broken dependency.
+            resolution, home = "runtime (Q&A)", table if table in table_names else None
         elif table in table_names:
             resolution, home = "missing field", table
             used_tables_direct.add(table)

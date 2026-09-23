@@ -101,6 +101,16 @@ def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
                 if kind == "HierarchyLevel":
                     level = inner.get("Level")
                     hierarchy = inner.get("Expression", {}).get("Hierarchy", {})
+                    variation = (hierarchy.get("Expression") or {}).get("PropertyVariationSource") \
+                        if isinstance(hierarchy, dict) and isinstance(hierarchy.get("Expression"), dict) else None
+                    if isinstance(variation, dict) and isinstance(variation.get("Property"), str):
+                        # Auto date/time hierarchy: the visual uses this date column
+                        # through its hidden date table, not a model hierarchy.
+                        table = _source_entity(variation, aliases)
+                        if table:
+                            out.append({"table": table, "field": variation["Property"],
+                                         "kind": "column", "context": context})
+                        continue
                     table = _source_entity(hierarchy.get("Expression", {}), aliases) \
                         or _source_entity(hierarchy, aliases)
                     if table and level:
@@ -109,7 +119,13 @@ def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
                                     "kind": "hierarchyLevel", "context": context})
                     continue
                 prop = inner.get("Property")
-                table = _source_entity(inner.get("Expression", {}), aliases)
+                expression = inner.get("Expression") or {}
+                if isinstance(expression, dict) and "TransformTableRef" in expression:
+                    # Output of an analytics transform (forecast, anomaly
+                    # detection): a computed column, not a model field. The
+                    # transform's real inputs are collected from its own query.
+                    continue
+                table = _source_entity(expression, aliases)
                 if prop:
                     out.append({
                         "table": table,
@@ -189,6 +205,10 @@ def _summarize_condition(f: dict) -> str | None:
 
 def parse_report(report_path: str | Path) -> dict:
     root = Path(report_path)
+    from .extracted_report import is_legacy_layout, parse_legacy_layout  # avoids an import cycle
+    if is_legacy_layout(root):
+        # PBIP saved before PBIR: one report.json with every page and visual.
+        return parse_legacy_layout(root, root.name.replace(".Report", ""))
     definition = root / "definition"
     if not definition.exists():
         # tolerate being handed the definition folder itself
@@ -313,6 +333,9 @@ def parse_report(report_path: str | Path) -> dict:
                                                   f"{display} / {title or vtype}")
                 page_filters.extend(visual_filters)
 
+                if vtype == "qnaVisual":
+                    for r in fields:
+                        r["runtime"] = True
                 visuals_out.append({
                     "id": vis_dir.name,
                     "type": vtype,

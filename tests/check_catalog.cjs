@@ -3,9 +3,11 @@ const html=fs.readFileSync(process.argv[2],'utf8'),script=html.match(/<script>([
 const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',innerHTML:'',textContent:''});return nodes.get(id)};
 const ctx=vm.createContext({console,URL,Map,document:{getElementById:node}}),run=s=>vm.runInContext(s,ctx);
 run(script);
-assert.equal(run("JSON.stringify(groupParts({reportLocation:'C:\\\\Reports\\\\Finance\\\\Sales.pbip'}))"),'["C:","Reports","Finance"]');
-assert.equal(run("JSON.stringify(groupParts({reportLocation:'https://example.com/teams/Finance/Sales'}))"),'["example.com","teams","Finance"]');
+assert.equal(run("JSON.stringify(groupParts({reportLocation:'C:\\\\Reports\\\\Finance\\\\Sales.pbip'}))"),'["Finance"]');
+assert.equal(run("JSON.stringify(groupParts({reportLocation:'https://example.com/teams/Finance/Sales'}))"),'["Finance"]');
 assert.equal(run("JSON.stringify(groupParts({folder:'Finance / Monthly',reportLocation:'https://example.com/elsewhere'}))"),'["Finance","Monthly"]');
+assert.equal(run("JSON.stringify(groupParts({reportLocation:'https://example.com/Sales'}))"),'["example.com"]');
+assert.equal(run("JSON.stringify(groupParts({reportLocation:'https://t.sharepoint.com/sites/BI/Shared%20Documents/Sales.pbix'}))"),'["Shared Documents"]');
 assert.equal(run("JSON.stringify(groupParts({}))"),'["Ungrouped"]');
 assert.equal(run("locationLink('javascript:alert(1)')"),'');
 assert.equal(run("locationLink('https://user:password@example.com/')"),'');
