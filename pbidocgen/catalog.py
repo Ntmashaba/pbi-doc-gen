@@ -112,7 +112,9 @@ def clean_summary(value):
             'sources': sources,
             'coverageIssues': number(value.get('coverageIssues')),
             'deletionCandidates': number(value.get('deletionCandidates')),
-            'needsReview': number(value.get('needsReview'))}
+            'needsReview': number(value.get('needsReview')),
+            'measuresDescribed': number(value.get('measuresDescribed')),
+            'duplicateMeasureSets': number(value.get('duplicateMeasureSets'))}
 
 
 def build_catalog(folder, output=None):

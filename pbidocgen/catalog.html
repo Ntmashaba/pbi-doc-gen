@@ -61,10 +61,11 @@ const MODE_LABEL={combined:'Model + report','semantic-only':'Model only','report
 function card(entry){
  const m=entry.metadata||{},loc=m.reportLocation||'',link=locationLink(loc),sum=entry.summary||{},c=sum.counts;
  const failed=batchReport?.files?.find(r=>r.filename===entry.filename&&r.status==='failed');
- const counts=c?[[c.tables,'tables'],[c.measures,'measures'],[c.pages,'pages']].filter(([n])=>n).map(([n,l])=>`${n} ${l}`).join(' · '):'';
+ const counts=c?[[c.tables,'tables'],[c.measures,'measures'],[c.pages,'pages']].filter(([n])=>n).map(([n,l])=>`${n} ${l}`).join(' · ')+(c.measures?` · ${sum.measuresDescribed} of ${c.measures} measures described`:''):'';
  const badges=[entry.mode?`<span class="badge b-other">${esc(MODE_LABEL[entry.mode]||entry.mode)}</span>`:'',
   sum.counts?(sum.coverageIssues?`<span class="badge b-warn">${sum.coverageIssues} analysis ${sum.coverageIssues===1?'issue':'issues'}</span>`:'<span class="badge b-ok">Full analysis coverage</span>'):'',
-  sum.deletionCandidates?`<span class="badge b-bad">${sum.deletionCandidates} cleanup ${sum.deletionCandidates===1?'candidate':'candidates'}</span>`:''].join(' ');
+  sum.deletionCandidates?`<span class="badge b-bad">${sum.deletionCandidates} cleanup ${sum.deletionCandidates===1?'candidate':'candidates'}</span>`:'',
+  sum.duplicateMeasureSets?`<span class="badge b-warn">${sum.duplicateMeasureSets} duplicate measure ${sum.duplicateMeasureSets===1?'set':'sets'}</span>`:''].join(' ');
  return `<article class="card"><h3><a href="${esc(entry.blobUrl||entry.href)}" target="_blank" rel="noopener">${esc(entry.title)}</a></h3>${failed?'<p><span class="badge b-bad">Latest batch failed</span> showing previous HTML</p>':''}<small>${esc(entry.filename)}${entry.generated?' · '+esc(entry.generated):''}</small>
   ${badges.trim()?`<p>${badges}</p>`:''}${counts?`<p class="muted">${esc(counts)}</p>`:''}
   ${(sum.sources||[]).length?`<div class="tags">${sum.sources.map(s=>`<button class="tag" title="Show every report that uses this source" onclick="${esc('searchFor('+JSON.stringify(s.label)+')')}">${esc(s.label)}</button>`).join('')}</div>`:''}
@@ -124,7 +125,7 @@ function cleanSummary(v){
  const text=x=>typeof x==='string'?x:'',num=x=>Number.isInteger(x)&&x>=0?x:0,c=v.counts&&typeof v.counts==='object'?v.counts:{};
  return {counts:Object.fromEntries(['tables','columns','measures','pages','visuals'].map(k=>[k,num(c[k])])),
   sources:(Array.isArray(v.sources)?v.sources:[]).filter(s=>s&&typeof s==='object').map(s=>({...Object.fromEntries(['label','sourceType','server','database','location'].map(k=>[k,text(s[k])])),tables:(Array.isArray(s.tables)?s.tables:[]).filter(t=>typeof t==='string')})),
-  coverageIssues:num(v.coverageIssues),deletionCandidates:num(v.deletionCandidates),needsReview:num(v.needsReview)};
+  coverageIssues:num(v.coverageIssues),deletionCandidates:num(v.deletionCandidates),needsReview:num(v.needsReview),measuresDescribed:num(v.measuresDescribed),duplicateMeasureSets:num(v.duplicateMeasureSets)};
 }
 let scanVersion=0;
 async function scanFiles(files){

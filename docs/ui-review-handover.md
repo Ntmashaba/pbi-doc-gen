@@ -67,7 +67,7 @@ Not done from C: sharing tokens and components with the hub (`catalog.html`). Mo
 ### Still open from the review
 
 - The two source parsers (`model_parser` patterns and the M tracer) still exist side by side; only their vocabulary is shared. Merging them changes what every partition reports, so it needs real PBIX extracts to check against, not only the synthetic samples.
-- The hub summary does not yet carry duplicate or documentation counts.
+- Done since: the hub summary carries `measuresDescribed` and `duplicateMeasureSets`, shown on each report card.
 
 ## Environment notes
 

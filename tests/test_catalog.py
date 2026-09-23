@@ -96,6 +96,7 @@ class CatalogTests(unittest.TestCase):
                           'SharePoint file \u00b7 Budget FY26.xlsx', 'CSV file \u00b7 targets.csv'})
         self.assertEqual(summary['counts'], {'tables': 7, 'columns': 45, 'measures': 15, 'pages': 3, 'visuals': 10})
         self.assertEqual((summary['coverageIssues'], summary['deletionCandidates'], summary['needsReview']), (1, 15, 2))
+        self.assertEqual((summary['measuresDescribed'], summary['duplicateMeasureSets']), (2, 1))
         with tempfile.TemporaryDirectory() as d:
             render_html(payload, Path(d) / 'Retail.html')
             row = describe_html((Path(d) / 'Retail.html').read_text(encoding='utf-8'), 'Retail.html')
@@ -106,4 +107,5 @@ class CatalogTests(unittest.TestCase):
                                         'evil': '<script>'}),
                          {'counts': {'tables': 0, 'columns': 0, 'measures': 0, 'pages': 0, 'visuals': 0},
                           'sources': [{'label': '', 'sourceType': '', 'server': '', 'database': '', 'location': '', 'tables': ['A']}],
-                          'coverageIssues': 0, 'deletionCandidates': 0, 'needsReview': 0})
+                          'coverageIssues': 0, 'deletionCandidates': 0, 'needsReview': 0,
+                          'measuresDescribed': 0, 'duplicateMeasureSets': 0})

@@ -33,6 +33,7 @@ def build_payload(model: dict | None, report: dict | None,
     source_objects = build_source_objects(model, report, columns)
     primary = build_primary_sources(model, report, source_objects, (columns or {}).get("globalIssues"),
                                     (columns or {}).get("tableIssues"))
+    quality = build_quality(model)
     return {
         "schemaVersion": 2,
         "title": title,
@@ -46,12 +47,12 @@ def build_payload(model: dict | None, report: dict | None,
         "primarySources": primary,
         "sourceQueries": build_source_queries(model, report),
         "tableSources": build_source_inventory(model, report, linked, columns) if model else [],
-        "summary": build_summary(model, report, columns, primary),
-        "quality": build_quality(model),
+        "summary": build_summary(model, report, columns, primary, quality),
+        "quality": quality,
     }
 
 
-def build_summary(model, report, columns, primary) -> dict:
+def build_summary(model, report, columns, primary, quality=None) -> dict:
     """Small, stable digest the documentation hub indexes across reports.
 
     The hub reads only this block (never the full payload) so its index does
@@ -91,6 +92,8 @@ def build_summary(model, report, columns, primary) -> dict:
         "coverageIssues": len((columns or {}).get("issues", [])),
         "deletionCandidates": column_counts.get("Deletion candidate", 0) + measure_counts.get("Deletion candidate", 0),
         "needsReview": column_counts.get("Review", 0) + measure_counts.get("Review", 0),
+        "measuresDescribed": ((quality or {}).get("documentation") or {}).get("measuresDescribed", 0),
+        "duplicateMeasureSets": len((quality or {}).get("duplicateMeasures") or []),
     }
 
 
