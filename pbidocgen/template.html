@@ -175,6 +175,8 @@ const DATA = /*__DATA__*/null;
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const M = DATA.model, R = DATA.report, L = DATA.linked, MODE = DATA.mode;
 const has = { model: !!M, report: !!R, linked: !!L };
+// "\\$#,0;(\\$#,0);\\$#,0" -> "$#,0": positive section, escapes and quotes removed.
+const fmtShort = f => String(f).split(";")[0].replace(/\\(.)/g,"$1").replace(/"([^"]*)"/g,"$1");
 const num = n => (n ?? 0).toLocaleString();
 const typeBadge = t => {
   const map = {fact:"b-fact", dimension:"b-dimension", "date dimension":"b-date"};
@@ -364,7 +366,7 @@ function filterColumns(){
   document.getElementById("column-rows").innerHTML = visibleColumns.map(r=>`<tr>
     <td><span class="badge ${r.decision==='Keep'?'b-direct':r.decision==='Review'?'b-warn':'b-info'}">${esc(r.decision)}</span><div class="mut">Used in report: ${esc(r.usedInReport)}</div></td>
     <td><div class="mut">${esc(r.table)}</div><b>${esc(r.column)}</b></td>
-    <td>${esc(r.page)||esc(r.pageScope)}${r.pageId?`<div class="mut">${esc(r.pageId)}</div>`:''}</td>
+    <td title="${esc(r.pageId)}">${esc(r.page)||esc(r.pageScope)}</td>
     <td>${esc(r.pageUsage)}${r.pageMeasures.length?`<div class="mut">${list(r.pageMeasures)}</div>`:''}</td><td><details><summary>${esc(r.reason)}</summary><div class="body">
     <b>Page evidence</b><p>${list(r.evidence)}</p><b>All dependent measures</b><p>${list(r.usedByMeasures)}</p>
     <b>Dependent calculations</b><p>${list(r.usedByCalculations)}</p><b>Model dependencies</b><p>${list(r.modelDependencies)}</p>
@@ -527,7 +529,7 @@ function drawLineage(){
 function rUsage(){
   const rows = DATA.columns.tablePages.filter(inPageScope).map(r=>{
     const category = r.kinds.includes('Direct')?'direct':r.kinds.some(k=>['Via measures','Via calculations','Table expression'].includes(k))?'via measures':r.kinds.length?'possible':'none';
-    return `<tr data-u="${category}"><td>${esc(r.report)}</td><td>${esc(r.page)||esc(r.scope)}<div class="mut">${esc(r.pageId)}</div></td>
+    return `<tr data-u="${category}"><td>${esc(r.report)}</td><td title="${esc(r.pageId)}">${esc(r.page)||esc(r.scope)}</td>
       <td>${tblLink(r.table)}</td><td>${esc(r.usage)}</td><td>${r.fields.map(esc).join(', ')||'—'}
       ${r.measures.length?`<div class="mut">Measures: ${r.measures.map(esc).join(', ')}</div>`:''}</td>
       <td class="mut">${r.evidence.map(esc).join('<br>')||'No page reference detected'}</td></tr>`;
@@ -634,7 +636,7 @@ function rTableSources(){
     <div class="column-scroll" style="margin-bottom:1.2rem"><table class="t" id="table-source-summary">
     <thead><tr><th>Report</th><th>Report page</th><th>Model table / partition</th><th>Page usage</th><th>Server</th><th>Database</th><th>Source type</th><th>Source object / query</th></tr></thead>
     <tbody>${DATA.tableSources.map((r,i)=>inPageScope(r)?`<tr data-source-index="${i}">
-      <td>${esc(r.report)}</td><td>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)}</div></td><td><b>${esc(r.table)}</b><div class="mut">${esc(r.partition)||'No partition'}</div></td>
+      <td>${esc(r.report)}</td><td title="${esc(r.pageId)}">${esc(r.page)||esc(r.pageScope)}</td><td><b>${esc(r.table)}</b><div class="mut">${esc(r.partition)||'No partition'}</div></td>
       <td>${esc(r.usage)}${r.pageMeasures.length?`<div class="mut">${r.pageMeasures.map(esc).join(', ')}</div>`:''}</td><td>${esc(r.server)||'Unknown / not applicable'}</td><td>${esc(r.database)||'Unknown / not applicable'}</td>
       <td>${esc(r.objectType)}<div class="mut">${esc(r.sourceType)}</div></td>
       <td>${r.object?`<span class="ref">${esc(r.object)}</span>`:''}
@@ -703,7 +705,7 @@ function rMeasures(){
     <details class="measure" id="mea-${slug(m.name)}" data-search="${esc([m.name,m.table,m.displayFolder,m.expression,m.description].join(" ").toLowerCase())}">
       <summary><span class="mea-name">${esc(m.name)}</span>
         ${has.linked ? (m.usedInReport?`<span class="badge b-direct">used on ${pagesOf(m)} ${pagesOf(m)===1?"page":"pages"}</span>`:'<span class="badge b-none">not used in report</span>') : ""}
-        ${m.formatString?`<span class="ref" title="Format string">${esc(m.formatString)}</span>`:""}
+        ${m.formatString?`<span class="ref" title="Format string: ${esc(m.formatString)}">${esc(fmtShort(m.formatString))}</span>`:""}
         <span class="mut" style="font-weight:400;margin-left:auto">${esc(m.table)}</span>
         <span class="mea-preview">${esc(preview(m.expression))}</span></summary>
       <div class="body">

@@ -126,6 +126,9 @@ def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
                     # transform's real inputs are collected from its own query.
                     continue
                 table = _source_entity(expression, aliases)
+                if not table and isinstance(prop, str) and "." in prop:
+                    # Text-box dynamic values store "Table.Column" with no SourceRef.
+                    table, prop = prop.split(".", 1)
                 if prop:
                     out.append({
                         "table": table,

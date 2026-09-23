@@ -94,7 +94,7 @@ function rMatrix(){
     <input id="matrix-search" class="search" value="${esc(matrixQuery)}" placeholder="Search tables or columns…" aria-label="Search usage matrix" oninput="matrixQuery=this.value;renderMatrixBody()">
     <label class="mut"><input type="checkbox" id="matrix-rel"${matrixRelOnly?' checked':''} onchange="matrixRelOnly=this.checked;switchTab('matrix')"> Include relationship-only</label>
     <p class="mut">Direct = visual or filter binding · Indirect = measure, calculation or table expression · Possible = calculated-table/parameter dependency${matrixRelOnly?', or an active relationship to a table used on the page':''}. Tables reached only through relationships are ${matrixRelOnly?'shown as Possible':'hidden; tick the box to show them'}. Hidden pages are included.</p>
-    <div class="column-scroll"><table class="t matrix"><thead><tr><th>Table / column</th>${slots.map(p=>`<th>${esc(p.page)}<div class="mut">${esc(p.pageId)}</div></th>`).join('')}</tr></thead><tbody id="matrix-body">${matrixBody(slots)}</tbody></table></div>`;
+    <div class="column-scroll"><table class="t matrix"><thead><tr><th>Table / column</th>${slots.map(p=>`<th title="${esc(p.pageId)}">${esc(p.page)}</th>`).join('')}</tr></thead><tbody id="matrix-body">${matrixBody(slots)}</tbody></table></div>`;
 }
 function matrixBody(slots){
   return matrixRows().map(r=>`<tr><th>${r.column===null?`<button class="xl" aria-expanded="${expandedTables.has(r.table)}" onclick="${action('toggleMatrixTable',r.table)}">${expandedTables.has(r.table)?'−':'+'} ${esc(r.table)}</button>`:`<span class="matrix-column">${esc(r.column)}</span>`}</th>
@@ -396,7 +396,7 @@ function filterSourceObjects(){
  visibleSourceObjects=sourceObjectRows(document.getElementById('source-object-search').value,document.getElementById('source-object-status').value);
  document.getElementById('source-object-count').textContent=`${visibleSourceObjects.length} source-object/page rows`;
  document.getElementById('source-object-rows').innerHTML=visibleSourceObjects.map(r=>`<tr>
- <td>${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)} · ${esc(r.pageUsage)}</div></td>
+ <td title="${esc(r.pageId)}">${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageUsage)}</div></td>
  <td>${esc(r.table)}<div class="mut">${esc(r.queryName)}</div></td>
  <td><b>${esc(r.object)||'No object resolved'}</b><div class="mut">${esc(r.sourceType)} · ${esc(r.server)||'server unresolved'}${r.database?' / '+esc(r.database):''}${r.schema?' / '+esc(r.schema):''}</div></td>
  <td><span class="badge ${r.status==='Resolved'?'b-direct':r.status==='Not applicable'?'b-other':'b-warn'}">${esc(r.status)}</span>
@@ -441,7 +441,7 @@ function filterPrimarySources(){
  document.getElementById('primary-source-count').textContent=`${visiblePrimarySources.length} external-input/page rows (including unresolved coverage)`;
  document.getElementById('primary-source-coverage').innerHTML=unresolved.length?`<details><summary>${unresolved.length} query/page entries have unresolved source coverage</summary><p>These entries are retained as unresolved rows in the view and export. Known sources from partially resolved queries also remain listed. This coverage list follows the selected page, independently of search.</p><ul>${unresolved.map(r=>`<li>${esc(r.queryName)} — ${esc(r.page)||esc(r.pageScope)}</li>`).join('')}</ul></details>`:'';
  document.getElementById('primary-source-rows').innerHTML=visiblePrimarySources.map(r=>`<tr>
- <td>${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)} · ${listText(r.pageUsage)}</div></td>
+ <td title="${esc(r.pageId)}">${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${listText(r.pageUsage)}</div></td>
  <td>${esc(r.sourceType)}</td><td>${esc(r.server)||'Unresolved / not supplied'}</td><td>${esc(r.database)||'Unresolved / not supplied'}</td>
  <td>${esc(r.schema)||'—'}</td><td>${esc(r.object)||'Object unresolved'}<div class="mut">${esc(r.location)}</div></td><td>${listText(r.primaryQueries)}</td>
  <td>${listText(r.consumingQueries)}<div class="mut">${listText(r.tables)}</div></td><td>${esc(r.status)}</td>

@@ -49,6 +49,11 @@ class ReportLayoutTests(unittest.TestCase):
                                                     "Property": "forecastValue"}}, col("Calendar", "Date")]}, {}, out)
         self.assertEqual([(f["table"], f["field"]) for f in out], [("Calendar", "Date")])
 
+    def test_textbox_dotted_field_without_source_names_its_table(self):
+        refs = []
+        _collect_field_refs({"Column": {"Expression": {}, "Property": "IT Area.IT Sub Area ID"}}, {}, refs)
+        self.assertEqual((refs[0]["table"], refs[0]["field"]), ("IT Area", "IT Sub Area ID"))
+
     def test_auto_date_hierarchy_uses_its_date_column(self):
         out = []
         _collect_field_refs({"HierarchyLevel": {"Expression": {"Hierarchy": {"Expression": {"PropertyVariationSource": {
