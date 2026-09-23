@@ -557,7 +557,7 @@ function rPages(){
       return `<tr><td>${has.model?tblLink(t):`<span class="ref">${esc(t)}</span>`}<div class="mut">${esc(usage)}</div></td><td class="mut">${fields.map(f=>`<span class="ref">${esc(f)}</span>`).join(" ")}</td></tr>`;
     }).join("");
     const visRows = p.visuals.map(v=>`
-      <tr><td><b>${esc(v.title||v.type)}</b>${v.title?`<div class="mut">${esc(v.type)}</div>`:""}</td>
+      <tr><td title="${esc(v.type)}"><b>${esc(visualName(p.id,v))}</b><div class="mut">${esc(visualTypeName(v.type))}</div></td>
       <td class="mut">${v.fields.map(f=>{
         const label = f.table?`${f.table}[${f.field}]`:`[${f.field}]`;
         const kind = f.kind==="measure"?" (m)":"";
@@ -743,7 +743,7 @@ function measureVisuals(m){
     if(!seen.has(key)) seen.set(key,{page,v,c,via:new Set()});
     if(via) seen.get(key).via.add(via); else seen.get(key).direct = true;
   }
-  const items = [...seen.values()].map(({page,v,c,via,direct})=>`<button class="xl" onclick="${action('inspectVisual',c.pageId,c.visualId)}">${esc(page?.name||c.pageId)} · ${esc(v?.title||v?.type||c.visualId)}</button>${direct?'':` <span class="mut">via ${[...via].map(esc).join(', ')}</span>`}`);
+  const items = [...seen.values()].map(({page,v,c,via,direct})=>`<button class="xl" onclick="${action('inspectVisual',c.pageId,c.visualId)}">${esc(page?.name||c.pageId)} · ${esc(v?visualName(c.pageId,v):c.visualId)}</button>${direct?'':` <span class="mut">via ${[...via].map(esc).join(', ')}</span>`}`);
   return items.join('<br>') || '<span class="mut">Not shown in any visual on the selected pages</span>';
 }
 function fMea(q){

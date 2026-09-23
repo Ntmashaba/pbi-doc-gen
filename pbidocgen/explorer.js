@@ -207,8 +207,18 @@ function zoomPageLayout(pageId,delta){
  if(label)label.textContent=Math.round(zoom*100)+'%';
 }
 // Untitled visuals: a readable type plus the first field ("Card · Amount"), not "cardVisual".
-const VISUAL_TYPE_NAMES={textbox:'Text box',cardVisual:'Card',card:'Card',multiRowCard:'Multi-row card',tableEx:'Table',pivotTable:'Matrix',slicer:'Slicer',advancedSlicerVisual:'Slicer',actionButton:'Button',image:'Image',shape:'Shape',basicShape:'Shape',kpi:'KPI',gauge:'Gauge',map:'Map',filledMap:'Filled map',decompositionTreeVisual:'Decomposition tree',keyDriversVisual:'Key influencers',qnaVisual:'Q&A'};
-function visualTypeName(t){t=String(t||'Visual');return VISUAL_TYPE_NAMES[t]||t.replace(/Visual$/,'').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/^./,c=>c.toUpperCase());}
+const VISUAL_TYPE_NAMES={textbox:'Text box',cardVisual:'Card',card:'Card',multiRowCard:'Multi-row card',tableEx:'Table',pivotTable:'Matrix',slicer:'Slicer',advancedSlicerVisual:'Slicer',actionButton:'Button',image:'Image',shape:'Shape',basicShape:'Shape',kpi:'KPI',gauge:'Gauge',map:'Map',filledMap:'Filled map',decompositionTreeVisual:'Decomposition tree',keyDriversVisual:'Key influencers',qnaVisual:'Q&A',pageNavigator:'Page navigator',bookmarkNavigator:'Bookmark navigator',aiNarratives:'Smart narrative',esriVisual:'ArcGIS map',group:'Group',tableEx:'Table',funnel:'Funnel',treemap:'Treemap'};
+// Custom visuals carry a GUID or timestamp: PBI_CV_885E..., simpleImageEBC4..., ClusterMap1652434605854.
+const CUSTOM_VISUAL_NAMES={PowerApps:'Power Apps',FlowVisual:'Power Automate'};
+function visualTypeName(t){
+ t=String(t||'Visual');
+ if(VISUAL_TYPE_NAMES[t]) return VISUAL_TYPE_NAMES[t];
+ const base=t.replace(/_?PBI_CV_[0-9A-Fa-f_]+$/,'').replace(/_?[0-9A-Fa-f]{8}_?[0-9A-Fa-f]{4}_?[0-9A-Fa-f]{4}_?[0-9A-Fa-f]{4}_?[0-9A-Fa-f]{12}$/,'').replace(/[0-9A-F]{32}$/,'').replace(/\d{8,}$/,'');
+ const custom=base!==t;
+ if(custom&&!base) return 'Custom visual';
+ const name=CUSTOM_VISUAL_NAMES[base]||base.replace(/Visual$/,'').replace(/_/g,' ').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/^./,c=>c.toUpperCase());
+ return custom?name+' (custom)':name;
+}
 function visualName(pageId,v){
  if(v.title) return v.title;
  const f=visualFields(pageId,v), first=f.measures[0]||f.columns[0];
@@ -236,7 +246,7 @@ function inspectVisual(pageId,visualId){
   document.querySelectorAll('.visual-box').forEach(box=>box.setAttribute('aria-pressed',String(box.dataset.pageId===pageId&&box.dataset.visualId===visualId)));
   const roots=graph.consumers.filter(c=>c.pageId===pageId&&c.visualId===visualId);
   const unresolved=visualFields(pageId,v).unresolved;
-  openInspector(v.title||v.type,`<p>${esc(p.label||p.name)} · ${esc(v.id)} · ${esc(v.type)}${v.hidden?' · hidden':''}</p>${unresolved.length?`<p><span class="badge b-warn">Unresolved</span> ${unresolved.map(f=>esc(`${f.table||'?'}[${f.field}]`)).join(', ')} could not be matched to the model, so usage for that table is uncertain.</p>`:''}<h3>Declared bindings</h3>
+  openInspector(visualName(p.id,v),`<p>${esc(p.name||p.label)} · ${esc(visualTypeName(v.type))} <span class="mut">(${esc(v.type)} · ${esc(v.id)})</span>${v.hidden?' · hidden':''}</p>${unresolved.length?`<p><span class="badge b-warn">Unresolved</span> ${unresolved.map(f=>esc(`${f.table||'?'}[${f.field}]`)).join(', ')} could not be matched to the model, so usage for that table is uncertain.</p>`:''}<h3>Declared bindings</h3>
     <p>${v.fields.map(f=>esc(`${f.table||'?'}[${f.field}] (${f.kind})`)).join('<br>')||'No field bindings detected.'}</p>
     <h3>Resolved fields</h3>${[...new Set(roots.map(c=>c.node))].map(id=>`<p><button class="xl" onclick="${action('inspectNode',id,pageId)}">${esc(graphNodes.get(id)?.label)}</button></p>`).join('')||'<p>No resolved model fields.</p>'}
     <h3>Visual filters</h3><p>${v.filters.map(f=>esc(`${f.table||'?'}[${f.field}] ${f.raw||''}`)).join('<br>')||'None detected'}</p>`);
