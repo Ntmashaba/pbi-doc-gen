@@ -21,7 +21,7 @@ function rememberView(){
   if(!activeTab || activeTab==='report-details') return;
   const state={inputs:[],details:[]};
   document.querySelectorAll('#main input[id]:not([type=file]), #main select[id]').forEach(el=>{
-    if(!['global-page','column-page','table-page','impact-field','impact-search'].includes(el.id)) state.inputs.push([el.id,el.value]);
+    if(!['global-page','impact-field','impact-search'].includes(el.id)) state.inputs.push([el.id,el.value]);
   });
   document.querySelectorAll('#main details[id][open]').forEach(el=>state.details.push(el.id));
   viewState.set(activeTab,state);
@@ -32,25 +32,31 @@ function restoreView(id){
   if(id==='impact'){document.getElementById('impact-field').value=impactNode;document.getElementById('impact-search').value=impactQuery;}
   for(const [key,value] of state?.inputs||[]){if(id==='impact'&&['impact-field','impact-search'].includes(key)) continue;const el=document.getElementById(key);if(el) el.value=value;}
   for(const key of state?.details||[]){const el=document.getElementById(key);if(el) el.open=true;}
-  for(const key of ['global-page','column-page','table-page']){const el=document.getElementById(key);if(el) el.value=pageScope;}
+  {const el=document.getElementById('global-page');if(el) el.value=pageScope;}
 }
 function scopeBar(id){
   const globalViews=['overview','rels','security','warnings','cleanup','report-details'];
   const pages=[...(R?.pages||[])];
   if(id==='compare') for(const p of comparison?.report?.pages||[]) if(!pages.some(x=>x.id===p.id)) pages.push(p);
-  const note=globalViews.includes(id)?'This view covers the whole extract. Your page selection is retained for usage views.':
-    id==='compare'?'Page changes follow this selection; model changes without page usage remain visible.':
-    'Usage and CSV exports follow this selection. Deletion assessments always cover the whole extract.';
-  return `<div class="scope-bar"><div><b>Report: ${esc(R?.name||'Not supplied')}</b><div class="mut">${esc(note)}</div></div>
-    ${DATA.columns?.issues?.length?`<details><summary>Analysis coverage: ${DATA.columns.issues.length} issue(s)</summary><p>${listText(DATA.columns.issues)}</p></details>`:''}
-    <label>Report page <select id="global-page" onchange="setPageScope(this.value)">
+  if(id==='report-details') return '';
+  const whole=globalViews.includes(id);
+  const dupes=new Set(pages.map(p=>p.name).filter((n,i,a)=>a.indexOf(n)!==i));
+  const note=whole?'This view covers the whole extract':
+    id==='compare'?'Page changes follow the selected page':
+    'Usage and exports follow the selected page; deletion assessments cover the whole extract';
+  const issues=DATA.columns?.issues||[];
+  const coverage=!DATA.columns?'':issues.length
+    ?`<details class="coverage"><summary><span class="badge b-warn">${issues.length} analysis ${issues.length===1?'issue':'issues'}</span></summary><div class="coverage-pop"><b>Analysis coverage</b><p>${listText(issues)}</p></div></details>`
+    :'<span class="badge b-direct">Full analysis coverage</span>';
+  const select=R?`<label class="scope-page">Report page <select id="global-page" onchange="setPageScope(this.value)"${whole?' title="Retained for page-level views"':''}>
     <option value="*">All pages</option><option value="">No specific page</option>
-    ${pages.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} [${esc(p.id)}]${p.hidden?' · hidden':''}</option>`).join('')}</select></label></div>`;
+    ${pages.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}${dupes.has(p.name)?` [${esc(p.id)}]`:''}${p.hidden?' (hidden)':''}</option>`).join('')}</select></label>`:'';
+  return `<div class="scope-bar">${select}<span class="mut scope-note">${esc(note)}</span>${coverage}</div>`;
 }
 function setPageScope(id){
   pageScope=id;
   closeInspector();
-  switchTab(activeTab||'columns');
+  switchTab(activeTab||'overview');
 }
 function openInspector(title,html){
   let panel=document.getElementById('inspector');

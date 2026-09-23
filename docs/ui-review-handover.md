@@ -31,7 +31,17 @@ Plan step 1 is done: task 0 and A1–A5. 113 tests pass (`python tests/run_ci.py
 
 The two parsers are still separate. Only their vocabulary is shared. Merging them fully is still open.
 
-Next is plan step 2: B1, B2, B5 and C.
+### Step 2 (B1, B2, B5, C)
+
+- **B1:** the report opens on Overview.
+- **B2:** the rail has six sections (`SECTIONS` in `template.html`). Every existing view keeps its id and becomes a sub-tab (`id="nav-<view>"`); section buttons are `id="sec-<section>"`. A section remembers the last sub-tab used. `switchTab(id)` still works for every view, so internal links are unchanged. Views not listed in `SECTIONS` fall into "Data & sources".
+- **B5:** the scope bar is one sticky row: page selector, a one-line scope note and a coverage badge that opens a popover (no stray arrow). The report name is gone (it is in the rail). The second page selectors on Columns and Tables are removed; page IDs appear in the selector only when two pages share a name. No scope bar on Report details.
+- **C:** `--ink2 #4F5B67`, `--ink3 #5E6B78`, `--amber #8A5D00`, `--poss/--warn #A04A07`; all at least 4.5:1 on every panel and badge background. Table headers are 12px sentence case; body `<th>` row headers are no longer styled as tiny column headers. Monospace is kept only for `.ref`, code and dependency paths; badges, nav, eyebrow and coupler labels use the sans font.
+- **Browser tests:** `tests/browser_review.cjs` looked for a "Close" button whose accessible name is "Close details", so it had never passed. Fixed, and both `browser_review.cjs` and `browser_catalog.cjs` now pass in Chromium and navigate through sections.
+
+Not done from C: sharing tokens and components with the hub (`catalog.html`). Mobile (B8) is improved by having six buttons instead of 20 but still takes about 180px; a menu button remains for step 4.
+
+Next is plan step 3: B3, B4, B6.
 
 ## Environment notes
 

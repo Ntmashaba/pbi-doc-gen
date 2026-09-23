@@ -22,6 +22,23 @@ The goal is onboarding: a Power BI developer who has never seen the report befor
 
 No installation beyond Python (3.10 or later). No third-party packages. One command, one file out.
 
+## Navigation
+
+The report opens on **Overview**. The left rail has six sections, and each existing
+view is a tab inside one of them:
+
+| Section | Views |
+|---|---|
+| Overview | Overview |
+| Data & sources | Tables, Columns, Measures, Relationships, Lineage, Sources, Primary sources, Security |
+| Pages & visuals | Pages, Page layout, Filters, Field manifest |
+| Impact & changes | Impact inspector, Usage matrix, Usage, Compare extracts |
+| Review issues | Cleanup review, Warnings |
+| Report details | Report details |
+
+A slim bar above each view holds the single report-page selector and an analysis
+coverage badge; select the badge to see what limited the analysis.
+
 ## Explore usage by report page
 
 The shared **Report page** selector stays selected as you move between Columns,

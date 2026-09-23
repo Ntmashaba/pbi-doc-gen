@@ -7,18 +7,19 @@
 <style>
 :root{
   --bg:#F3F5F7; --panel:#FFFFFF; --panel2:#F8FAFB;
-  --ink:#1C2430; --ink2:#61707F; --ink3:#8B98A5;
+  /* Text tokens meet WCAG AA (4.5:1) on every panel and badge background. */
+  --ink:#1C2430; --ink2:#4F5B67; --ink3:#5E6B78;
   --line:#DDE3E9; --line2:#EBEFF3;
-  --amber:#B77E00; --pbi:#F2C811;
+  --amber:#8A5D00; --pbi:#F2C811;
   --direct:#157A46; --directBg:#E7F5EE;
   --viam:#0E7490; --viamBg:#E6F4F7;
-  --poss:#B45309; --possBg:#FBF0E1;
+  --poss:#A04A07; --possBg:#FBF0E1;
   --none:#B42318; --noneBg:#FBEAE8;
   --fact:#3B4A9F; --factBg:#EAECF8;
   --dim:#0F766E; --dimBg:#E4F3F1;
   --date:#7C3AED; --dateBg:#F1EAFC;
   --other:#61707F; --otherBg:#EEF1F4;
-  --warn:#B45309; --info:#61707F;
+  --warn:#A04A07; --info:#4F5B67;
   --mono:"Cascadia Code","Cascadia Mono",Consolas,"SFMono-Regular",Menlo,monospace;
   --sans:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
 }
@@ -30,15 +31,14 @@ a{color:var(--amber)}
 .layout{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
 /* ---------------- nav rail ---------------- */
 nav{background:var(--panel);border-right:1px solid var(--line);padding:1.1rem .8rem;position:sticky;top:0;height:100vh;overflow-y:auto}
-.brand{font-size:.68rem;font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:.35rem}
+.brand{font-size:.78rem;color:var(--ink3);margin-bottom:.2rem}
 .doc-title{font-weight:600;font-size:1.02rem;line-height:1.25;margin-bottom:1.1rem;word-break:break-word}
-.nav-group{font-size:.64rem;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);margin:1rem .5rem .3rem}
 .nav-btn{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;border:0;background:none;font:inherit;color:var(--ink2);padding:.42rem .55rem;border-radius:6px;cursor:pointer}
 .nav-btn:hover{background:var(--panel2);color:var(--ink)}
 .nav-btn.active{background:var(--ink);color:#fff;font-weight:600;box-shadow:inset 3px 0 0 var(--pbi)}
 .nav-btn:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
-.nav-btn .n{font-family:var(--mono);font-size:.68rem;color:inherit;opacity:.65}
-.nav-btn.disabled{opacity:.38;cursor:not-allowed}
+.nav-btn .n{font-size:.75rem;color:inherit;font-variant-numeric:tabular-nums}
+.nav-btn.disabled{opacity:.5;cursor:not-allowed}
 /* ---------------- content ---------------- */
 main{padding:1.4rem 2rem 4rem;max-width:1240px}
 main{min-width:0}
@@ -49,21 +49,21 @@ main{min-width:0}
 .column-scroll details{min-width:200px;font-size:.8rem}
 .column-scroll summary{padding:.25rem .4rem;font-weight:400}
 /* mode coupler (signature) */
-.coupler{display:flex;align-items:stretch;gap:0;margin-bottom:1.5rem;font-family:var(--mono)}
+.coupler{display:flex;align-items:stretch;gap:0;margin-bottom:1.5rem}
 .coupler .half{flex:1;border:1.5px solid var(--ink);padding:.6rem .9rem;background:var(--panel)}
 .coupler .half:first-child{border-radius:8px 0 0 8px;border-right-width:0}
 .coupler .half:last-child{border-radius:0 8px 8px 0}
 .coupler .joint{width:26px;display:flex;align-items:center;justify-content:center;border-top:1.5px solid var(--ink);border-bottom:1.5px solid var(--ink);background:var(--pbi);font-weight:700;color:var(--ink)}
 .coupler .half.off{background:repeating-linear-gradient(-45deg,var(--panel2),var(--panel2) 6px,var(--line2) 6px,var(--line2) 12px);color:var(--ink3);border-color:var(--line)}
 .coupler .joint.off{background:var(--line2);border-color:var(--line);color:var(--ink3)}
-.coupler .tag{font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
+.coupler .tag{font-size:.75rem;color:var(--ink3)}
 .coupler .val{font-size:.86rem;font-weight:600;font-family:var(--sans)}
-.coupler .sub{font-size:.7rem;color:var(--ink2)}
+.coupler .sub{font-size:.78rem;color:var(--ink2)}
 /* generic */
 h1{font-size:1.45rem;font-weight:650;letter-spacing:-.01em;margin-bottom:.2rem}
 h2{font-size:1.05rem;font-weight:650;margin:1.6rem 0 .6rem}
 .sub{color:var(--ink2)}
-.eyebrow{font-family:var(--mono);font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.eyebrow{font-size:.78rem;color:var(--ink3)}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:1rem 1.1rem;margin-bottom:.8rem}
 .grid{display:grid;gap:.8rem}
 .grid.c4{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
@@ -71,10 +71,12 @@ h2{font-size:1.05rem;font-weight:650;margin:1.6rem 0 .6rem}
 .stat .big{font-size:1.6rem;font-weight:650;font-variant-numeric:tabular-nums}
 .stat .lbl{font-size:.74rem;color:var(--ink2)}
 table.t{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:.82rem}
-table.t th{font-family:var(--mono);font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--line);background:var(--panel2)}
+table.t th{text-align:left;padding:.5rem .7rem;vertical-align:top}
+table.t thead th{font-size:.75rem;font-weight:600;color:var(--ink2);border-bottom:1px solid var(--line);background:var(--panel2)}
+table.t tbody th{font-weight:600;border-bottom:1px solid var(--line2)}
 table.t td{padding:.44rem .7rem;border-bottom:1px solid var(--line2);vertical-align:top}
 table.t tr:last-child td{border-bottom:0}
-.badge{display:inline-block;font-family:var(--mono);font-size:.62rem;letter-spacing:.05em;padding:.12rem .45rem;border-radius:4px;white-space:nowrap;text-transform:uppercase}
+.badge{display:inline-block;font-size:.75rem;font-weight:600;padding:.08rem .45rem;border-radius:4px;white-space:nowrap}
 .b-fact{background:var(--factBg);color:var(--fact)} .b-dimension{background:var(--dimBg);color:var(--dim)}
 .b-date{background:var(--dateBg);color:var(--date)} .b-other{background:var(--otherBg);color:var(--other)}
 .b-direct{background:var(--directBg);color:var(--direct)} .b-viam{background:var(--viamBg);color:var(--viam)}
@@ -106,7 +108,7 @@ svg text{font-family:var(--sans)}
 .legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.76rem;color:var(--ink2);margin:.4rem 0 .8rem}
 .legend span{display:flex;align-items:center;gap:.35rem}
 .dot{width:9px;height:9px;border-radius:2px;display:inline-block}
-@media (max-width:860px){.layout{grid-template-columns:1fr}nav{position:static;height:auto;display:flex;flex-wrap:wrap;gap:.2rem;border-right:0;border-bottom:1px solid var(--line)}.doc-title,.brand,.nav-group{width:100%}main{padding:1rem}}
+@media (max-width:860px){.layout{grid-template-columns:1fr}nav{position:static;height:auto;display:flex;flex-wrap:wrap;gap:.25rem;border-right:0;border-bottom:1px solid var(--line);padding:.8rem 1rem}.doc-title,.brand{width:100%}.doc-title{margin-bottom:.4rem}.nav-btn{width:auto;padding:.35rem .6rem;border:1px solid var(--line)}main{padding:1rem}}
 @media print{nav{display:none}.layout{grid-template-columns:1fr}}
 /*__EXPLORER_CSS__*/
 </style>
@@ -183,18 +185,45 @@ const reportManifest = () => (has.linked ? L.manifest : (R?.manifest||[])).map(e
   return {...e,locations,usedIn:locations.map(l=>pageLabel(l)+": "+l.description)};
 }).filter(e=>pageScope==='*'||e.locations.length);
 
+/* Six top-level sections; every existing view is a sub-tab of one of them. */
+const SECTIONS = [
+  {id:"overview", label:"Overview",         tabs:["overview"]},
+  {id:"data",     label:"Data & sources",   tabs:["tables","columns","measures","rels","lineage","sources","primary-sources","security"]},
+  {id:"visuals",  label:"Pages & visuals",  tabs:["pages","layout","filters","manifest"]},
+  {id:"changes",  label:"Impact & changes", tabs:["impact","matrix","usage","compare"]},
+  {id:"review",   label:"Review issues",    tabs:["cleanup","warnings"]},
+  {id:"details",  label:"Report details",   tabs:["report-details"]},
+];
+const lastTabInSection = {};
+const sectionOf = id => SECTIONS.find(s=>s.tabs.includes(id)) || SECTIONS[1];
+const sectionTabs = s => TABS.filter(t=>sectionOf(t.id)===s)
+  .sort((a,b)=>s.tabs.indexOf(a.id)-s.tabs.indexOf(b.id));
+function openSection(sid){
+  const s = SECTIONS.find(x=>x.id===sid);
+  const tabs = sectionTabs(s).filter(t=>t.avail);
+  const last = tabs.find(t=>t.id===lastTabInSection[sid]);
+  if(tabs.length) switchTab((last||tabs[0]).id);
+}
 function buildNav(){
   const nav = document.getElementById("nav");
-  let html = `<div class="brand">PBI Doc Gen</div><div class="doc-title">${esc(DATA.title)}</div>`;
-  let group = "";
-  for(const t of TABS){
-    if(t.group!==group){ group=t.group; html += `<div class="nav-group">${group}</div>`; }
-    const c = t.avail && t.count ? t.count() : null;
-    html += t.avail
-      ? `<button class="nav-btn" id="nav-${t.id}" onclick="switchTab('${t.id}')">${t.label}${c?`<span class="n">${c}</span>`:""}</button>`
-      : `<button class="nav-btn disabled" title="Not available in ${MODE} mode" tabindex="-1">${t.label}</button>`;
+  let html = `<div class="brand">Power BI documentation</div><div class="doc-title">${esc(DATA.title)}</div>`;
+  for(const s of SECTIONS){
+    const avail = sectionTabs(s).some(t=>t.avail);
+    html += avail
+      ? `<button class="nav-btn" id="sec-${s.id}" onclick="openSection('${s.id}')">${esc(s.label)}</button>`
+      : `<button class="nav-btn disabled" id="sec-${s.id}" title="Not available in ${MODE} mode" tabindex="-1">${esc(s.label)}</button>`;
   }
   nav.innerHTML = html;
+}
+function subTabs(id){
+  const tabs = sectionTabs(sectionOf(id));
+  if(tabs.length<2) return "";
+  return `<div class="subtabs" aria-label="${esc(sectionOf(id).label)} views">${tabs.map(t=>{
+    const c = t.avail && t.count ? t.count() : null;
+    return t.avail
+      ? `<button class="subtab${t.id===id?" active":""}" id="nav-${t.id}"${t.id===id?' aria-current="page"':""} onclick="switchTab('${t.id}')">${esc(t.label)}${c?` <span class="n">${esc(c)}</span>`:""}</button>`
+      : `<button class="subtab disabled" title="Not available in ${MODE} mode" tabindex="-1">${esc(t.label)}</button>`;
+  }).join("")}</div>`;
 }
 function switchTab(id){
   const tab = TABS.find(t=>t.id===id);
@@ -202,10 +231,12 @@ function switchTab(id){
   rememberView();
   closeInspector();
   activeTab = id;
-  document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
-  const btn = document.getElementById("nav-"+id);
-  if(btn) btn.classList.add("active");
-  document.getElementById("main").innerHTML = scopeBar(id) + RENDER[id]();
+  const section = sectionOf(id);
+  lastTabInSection[section.id] = id;
+  document.querySelectorAll(".nav-btn").forEach(b=>{b.classList.remove("active");b.removeAttribute("aria-current");});
+  const btn = document.getElementById("sec-"+section.id);
+  if(btn){ btn.classList.add("active"); btn.setAttribute("aria-current","true"); }
+  document.getElementById("main").innerHTML = subTabs(id) + scopeBar(id) + RENDER[id]();
   restoreView(id);
   window.scrollTo(0,0);
   if(id==="rels") drawERD();
@@ -240,9 +271,6 @@ function rColumns(){
         <option value="">All assessments</option><option>Keep</option><option>Deletion candidate</option><option>Review</option></select>
       <select id="column-used" class="search" style="width:auto;margin:0" aria-label="Filter report usage" onchange="filterColumns()">
         <option value="">All report usage</option><option value="Yes">Used in report</option><option value="Possible">Possible usage</option><option value="Not detected">No report usage detected</option><option value="Unknown">Usage unknown</option></select>
-      <select id="column-page" class="search" style="width:auto;margin:0;max-width:240px" aria-label="Filter report page" onchange="setPageScope(this.value)">
-        <option value="*">All pages</option><option value="">No specific page</option>
-        ${(R?.pages||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.id)})</option>`).join("")}</select>
       <button class="chip" onclick="downloadColumnCsv()">Export filtered CSV</button>
     </div>
     <p id="column-count" class="mut" aria-live="polite" style="margin-bottom:.5rem"></p>
@@ -254,9 +282,8 @@ function filterColumns(){
   const q = document.getElementById("column-search").value.toLowerCase().trim();
   const assessment = document.getElementById("column-assessment").value;
   const used = document.getElementById("column-used").value;
-  const page = document.getElementById("column-page").value;
   visibleColumns = DATA.columns.rows.filter(inPageScope).filter(r=>(!q||Object.values(r).join(" ").toLowerCase().includes(q)) &&
-    (!assessment||r.decision===assessment) && (!used||r.usedInReport===used) && (page==="*"||r.pageId===page));
+    (!assessment||r.decision===assessment) && (!used||r.usedInReport===used));
   const value = r=>String(r[columnSort.key]??"");
   visibleColumns.sort((a,b)=>columnSort.direction*value(a).localeCompare(value(b),undefined,{numeric:true}) ||
     a.table.localeCompare(b.table) || a.column.localeCompare(b.column) || a.pageId.localeCompare(b.pageId));
@@ -398,7 +425,7 @@ function drawLineage(){
   sources.forEach((s,i)=>{ svg += node(8, yOf(i,sources.length), 250, s.key, "var(--panel2)", "var(--line)", nodeId("s",s.key), `onclick="linHl('s','${slug(s.key)}')"`, 38, true); });
   tables.forEach((t,i)=>{ svg += node(colW+8, yOf(i,tables.length), 198, t.name, "#fff", uColor(t.usage), nodeId("t",t.name), `onclick="${action('linHl','t',slug(t.name),t.name)}"`); });
   pages.forEach((p,i)=>{ svg += node(colW*2+8, yOf(i,pages.length), 198, `${p.name} [${p.id}]`, "var(--panel2)", "var(--line)", 'ln-p-'+pageKey(p.id), `onclick="linHl('p','${pageKey(p.id)}')"`); });
-  ["Sources","Model tables","Report pages"].forEach((h,i)=>{ svg += `<text x="${i*colW+8}" y="${12}" font-size="10" fill="var(--ink3)" style="text-transform:uppercase;letter-spacing:.1em;font-family:var(--mono)">${h}</text>`; });
+  ["Sources","Model tables","Report pages"].forEach((h,i)=>{ svg += `<text x="${i*colW+8}" y="${12}" font-size="12" font-weight="600" fill="var(--ink2)">${h}</text>`; });
   svg += "</svg>";
   board.innerHTML = svg;
 }
@@ -532,7 +559,7 @@ function rTableSources(){
     </tr>`:'').join('')}</tbody></table></div>`;
 }
 function downloadSourceCsv(){
-  const rows=sourceRows(document.getElementById('table-search').value,document.getElementById('table-page').value);
+  const rows=sourceRows(document.getElementById('table-search').value);
   exportCsvFile(inventoryCsv(rows,sourceCsvFields),'report-table-sources.csv');
 }
 function rTables(){
@@ -566,16 +593,13 @@ function rTables(){
   }).join("");
   return `${coupler()}<h1>Tables</h1>
   <input id="table-search" class="search" placeholder="Search tables, reports or sources…" aria-label="Search tables, reports or sources" oninput="fTbl(this.value)">
-  <select id="table-page" class="search" aria-label="Filter tables by report page" onchange="setPageScope(this.value)">
-    <option value="*">All pages</option><option value="">No specific page</option>
-    ${(R?.pages||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}</select>
   ${rTableSources()}
   <h2>Table details</h2>
   <div id="tbl-list">${cards}</div>`;
 }
 function fTbl(q){
   q=q.toLowerCase();
-  const visibleRows = new Set(sourceRows(q,document.getElementById('table-page').value));
+  const visibleRows = new Set(sourceRows(q));
   const matches = new Set([...visibleRows].map(r=>r.table));
   document.querySelectorAll('[data-source-index]').forEach(tr=>{
     const row=DATA.tableSources[Number(tr.dataset.sourceIndex)];
@@ -701,7 +725,7 @@ const RENDER = {columns:rColumns, overview:rOverview, lineage:rLineage, usage:rU
 /*__EXPLORER_JS__*/
 /*__DOCUMENTATION_JS__*/
 buildNav();
-switchTab(has.model ? "columns" : "overview");
+switchTab("overview");
 </script>
 </body>
 </html>
