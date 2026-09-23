@@ -161,6 +161,41 @@ table.t td,table.t tbody th{border-bottom-color:var(--line2)}
 .nav-btn{color:#DCE4EE}nav .brand{color:#C9D5E3}
 .column-scroll td,table.t td{overflow-wrap:break-word;word-break:normal}
 .erd-viewport{background-color:#F4F7FA;background-image:radial-gradient(#B9C6D4 .9px,transparent .9px)}
+/* Modern palette: slate neutrals, indigo accent, soft tinted badges.
+   Overrides the earlier tokens; every text/background pair keeps WCAG AA. */
+:root{
+  --bg:#F5F7FB; --panel:#FFFFFF; --panel2:#F1F4F9;
+  --ink:#0F172A; --ink2:#334155; --ink3:#475569;
+  --line:#CBD5E1; --line2:#E2E8F0;
+  --amber:#4F46E5; --pbi:#6366F1; --accent:#4F46E5; --accentSoft:#EEF2FF;
+  --direct:#047857; --directBg:#D1FAE5;
+  --viam:#0E7490; --viamBg:#CFFAFE;
+  --poss:#B45309; --possBg:#FEF3C7;
+  --none:#BE123C; --noneBg:#FFE4E6;
+  --fact:#4338CA; --factBg:#E0E7FF;
+  --dim:#0F766E; --dimBg:#CCFBF1;
+  --date:#6D28D9; --dateBg:#EDE9FE;
+  --other:#475569; --otherBg:#E2E8F0;
+  --warn:#B45309; --info:#334155;
+}
+a,.xl{color:var(--accent)}
+.card,table.t,details,.column-scroll{border-radius:12px}
+.card{box-shadow:0 1px 2px #0f172a0d,0 4px 12px #0f172a0a}
+table.t thead th{background:#F1F4F9;color:var(--ink2);text-transform:uppercase;letter-spacing:.04em;font-size:.72rem}
+.badge{border-radius:999px;padding:.12rem .55rem}
+.chip{border-radius:999px}
+.chip.on{background:var(--accent);border-color:var(--accent)}
+.hl{background:#E0E7FF!important;color:var(--ink)!important}
+nav{background:#0F172A}
+.nav-btn{color:#CBD5E1}.nav-btn:hover{background:#1E293B;color:#fff}
+.nav-btn.active{background:#1E293B;color:#fff;box-shadow:inset 3px 0 0 #818CF8}
+nav .brand{color:#94A3B8}
+.library-back{color:#C7D2FE}
+.breadcrumb a{color:var(--accent)}
+.coupler .joint{background:var(--accentSoft);color:var(--accent)}
+.subtab.active{color:var(--ink);border-bottom-color:var(--accent)!important}
+.search:focus,.nav-btn:focus-visible,.xl:focus-visible{outline-color:var(--accent)}
+.erd-viewport{background-color:#F8FAFC;background-image:radial-gradient(#CBD5E1 .9px,transparent .9px)}
 </style>
 </head>
 <body>
