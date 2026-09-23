@@ -121,6 +121,8 @@ const haystack=e=>JSON.stringify([e.title,e.filename,e.metadata,(e.summary?.sour
 function renderSourceIndex(filtered){
  const panel=document.getElementById('source-index'),index=new Map();
  for(const e of filtered) for(const s of e.summary?.sources||[]){
+  // Data typed into Power Query or generated there is not a shared source.
+  if(['Entered data','Generated in Power Query','Calculated (DAX)'].includes(s.type||s.sourceType||s.label)) continue;
   if(!index.has(s.label)) index.set(s.label,{source:s,reports:[]});
   index.get(s.label).reports.push(e);
  }

@@ -54,8 +54,19 @@ def load_extracted(folder, source, has_embedded_model):
         candidates = list(folder.glob('*.SemanticModel'))
         if len(candidates) == 1:
             model_path = candidates[0]
+    if model_path is None:
+        # pbi-tools falls back to its Default layout for some older PBIX files;
+        # look for any model definition under Model/ (TMDL under definition/,
+        # a database.json one level down, a .bim).
+        model_root = folder / 'Model'
+        found = sorted(model_root.rglob('model.tmdl')) + sorted(model_root.rglob('database.json')) \
+            + sorted(model_root.rglob('*.bim')) if model_root.is_dir() else []
+        if found:
+            model_path = found[0] if found[0].suffix != '.tmdl' else found[0].parent
     if has_embedded_model and model_path is None:
-        raise ValueError('PBIX contains an embedded model but extraction produced no readable model definition')
+        written = sorted(str(p.relative_to(folder)) for p in folder.glob('*/*'))[:25] if folder.is_dir() else []
+        raise ValueError('PBIX contains an embedded model but extraction produced no readable model definition. '
+                         'pbi-tools wrote: ' + (', '.join(written) or 'nothing'))
     raw_database = model_path is not None and model_path.name == 'database.json'
     if model_path is not None and model_path.name == 'database.json':
         model_dir = model_path.parent

@@ -123,10 +123,14 @@ class ColumnUsageTests(unittest.TestCase):
 
     def test_whole_table_and_incomplete_analysis_are_review(self):
         raw = raw_model()
-        raw["model"]["tables"][0]["measures"].append({"name": "Rows", "expression": "COUNTROWS(Sales)"})
+        # Distinct rows depend on every column; a plain row count depends on none.
+        raw["model"]["tables"][0]["measures"].append({"name": "Rows", "expression": "COUNTROWS(DISTINCT(Sales))"})
         row = self.rows("Unused", model=self.model(raw))[0]
         self.assertEqual(row["decision"], "Review")
         self.assertTrue(any("Whole-table" in s for s in row["reviewNotes"]))
+        counted = raw_model()
+        counted["model"]["tables"][0]["measures"].append({"name": "Rows", "expression": "CALCULATE(COUNTROWS('Sales'), Sales[Region] = \"x\")"})
+        self.assertFalse(any("Whole-table" in s for s in self.rows("Unused", model=self.model(counted))[0]["reviewNotes"]))
         report = report_fixture()
         report["warnings"] = [{"message": "Could not parse visual"}]
         self.assertEqual(self.rows("Unused", report=report)[0]["decision"], "Review")

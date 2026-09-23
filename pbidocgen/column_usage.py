@@ -35,6 +35,10 @@ def _custom_visual(visual_type) -> bool:
     return bool(visual_type and _CUSTOM_VISUAL.search(str(visual_type)))
 
 
+_ROW_COUNT = re.compile(r"\b(?:COUNTROWS|ISEMPTY)\s*\(\s*(?:RELATEDTABLE\s*\(\s*)?"
+                        r"(?:'(?:[^']|'')+'|[^\W\d]\w*)\s*\)?\s*\)", re.I)
+
+
 def build_column_usage(model: dict, report: dict | None) -> dict:
     tables = {t["name"]: t for t in model["tables"]}
     table_lookup = {t.casefold(): t for t in tables}
@@ -124,6 +128,9 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         for start, end in spans:
             chars[start:end] = " " * (end - start)
         remainder = "".join(chars)
+        # COUNTROWS(T) / ISEMPTY(T) depend on T's rows, not its columns:
+        # removing a column never changes the count.
+        remainder = _ROW_COUNT.sub(" ", remainder)
         whole_tables = set()
         for table in tables:
             quoted = "'" + table.replace("'", "''") + "'"
