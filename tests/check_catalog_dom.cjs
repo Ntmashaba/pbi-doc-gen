@@ -23,16 +23,18 @@ const fs=require('node:fs'),assert=require('node:assert/strict');
  const saved=await blob.text();w=open(saved);w.switchTab('report-details');
  assert.ok([...w.document.querySelectorAll('input[id$="-username"]')].some(n=>n.value==='other_reader'));
  assert.equal(w.injected,undefined);
- let hub=open(fs.readFileSync('pbidocgen/catalog.html','utf8'));
+ let hub=open(fs.readFileSync('pbidocgen/catalog.html','utf8').replace('/*__BATCH__*/null',JSON.stringify({generated:0,failed:1,generatedAt:'Test run',files:[{title:'Sales',filename:'Sales #1.html',status:'failed',error:'Synthetic failure',previousHtmlRetained:true}]})));
  const parsed=hub.readEntry(saved,'Sales #1.html');assert.equal(parsed.metadata.connections[0].username,'other_reader');
  assert.equal(parsed.title,'Browser regression fixture');
  await hub.scanFiles([{name:'Sales #1.html',webkitRelativePath:'docs/Sales #1.html',text:async()=>saved},
   {name:'old.html',webkitRelativePath:'docs/old.html',text:async()=>'<script>const DATA = {"title":"Old report"};</script>'},
   {name:'skip.html',webkitRelativePath:'docs/nested/skip.html',text:async()=>saved}]);
+ assert.match(hub.document.getElementById('batch-status').textContent,/Synthetic failure/);
+ assert.match(hub.document.getElementById('tree').textContent,/Latest batch failed/);
  assert.equal(hub.document.querySelectorAll('.card').length,2);assert.equal(hub.document.querySelector('#tree img'),null);
  assert.ok(hub.document.querySelector('.card h3 a').href.startsWith('blob:'));
  hub.downloadCatalog();assert.equal(filename,'pbi-home.html');
- hub=open(await blob.text());assert.equal(hub.document.querySelectorAll('.card').length,2);
+ hub=open(await blob.text());assert.match(hub.document.getElementById('batch-status').textContent,/Synthetic failure/);assert.equal(hub.document.querySelectorAll('.card').length,2);
  assert.ok(!hub.document.querySelector('.card h3 a').href.startsWith('blob:'));
  assert.deepEqual(errors,[]);
  windows.forEach(w=>w.close());console.log('DOM integration passed: edit/remove, saved HTML reopen, inert folder scan, escaped metadata, downloaded home reopen.');

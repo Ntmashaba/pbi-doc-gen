@@ -68,7 +68,28 @@ def main(argv=None) -> int:
     ap.add_argument("--catalog", metavar="FOLDER", help="Build or refresh pbi-home.html from existing HTML files; no model required")
     ap.add_argument("--metadata", metavar="JSON", help="Apply report location and username references from a documentation JSON file")
     ap.add_argument("--no-hub", action="store_true", help="Do not refresh the documentation home after generation")
+    pbix_inputs = ap.add_mutually_exclusive_group()
+    pbix_inputs.add_argument("--pbix-folder", metavar="FOLDER", help="Generate documentation for every PBIX in a folder")
+    pbix_inputs.add_argument("--pbix", metavar="FILE", help="Generate documentation for one PBIX")
+    ap.add_argument("--output-dir", metavar="FOLDER", help="PBIX HTML destination (default: input folder/documentation)")
+    ap.add_argument("--recursive", action="store_true", help="Include PBIX files in subfolders")
+    ap.add_argument("--pbi-tools", metavar="EXE", help="Path to the pbi-tools Desktop executable")
+    ap.add_argument("--extract-timeout", type=int, default=600, metavar="SECONDS", help="Extraction timeout per PBIX (default: 600)")
     args = ap.parse_args(argv)
+    if args.pbix_folder or args.pbix:
+        if any((args.project, args.model, args.report, args.output, args.title, args.json_out,
+                args.csv_out, args.word_out, args.agent_out is not None, args.metadata, args.catalog, args.no_hub)):
+            ap.error("PBIX mode uses --output-dir and always creates a home page; do not combine it with project/model/report or individual export options.")
+        from pbidocgen.pbix_batch import run_batch
+        try:
+            summary = run_batch(args.pbix_folder or args.pbix, args.output_dir,
+                                args.recursive, args.pbi_tools, args.extract_timeout)
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return 1 if summary['failed'] else 0
+    if args.output_dir or args.recursive or args.pbi_tools or args.extract_timeout != 600:
+        ap.error("--output-dir, --recursive, --pbi-tools and --extract-timeout require --pbix or --pbix-folder")
     from pbidocgen.catalog import build_catalog, validate_metadata
     if args.catalog and not (args.model or args.report or args.project):
         if args.metadata:

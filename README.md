@@ -1,5 +1,21 @@
 # Power BI Documentation Generator
 
+## New: process a whole folder of PBIX files
+
+On Windows, install Power BI Desktop and **pbi-tools Desktop**, then run:
+
+```powershell
+python generate_docs.py --pbix-folder "C:\Reports" --output-dir "C:\Documentation" --pbi-tools "C:\Tools\pbi-tools\pbi-tools.exe" --recursive
+```
+
+Open `C:\Documentation\pbi-home.html`. Each successfully extracted PBIX has an HTML
+report; failures appear in the home-page summary and do not stop other files.
+Saved usernames and report locations survive reruns. See
+[PBIX-QUICKSTART.md](PBIX-QUICKSTART.md) for installation, single-file usage,
+logs, limitations and validation status. The Windows extraction dependency is
+not bundled; end-to-end testing with actual PBIX files remains pending.
+
+
 Generate a single, self-contained, interactive HTML documentation file for a Power BI solution — from its **semantic model** (`model.bim`), its **report** (a PBIR `*.Report` folder), or **both together**.
 
 The goal is onboarding: a Power BI developer who has never seen the report before should be able to open one HTML file and understand what the solution contains, where the data comes from, how the report actually consumes the model, what is safe to remove, and where the gotchas are.
@@ -62,7 +78,8 @@ are embedded during generation, so you do not need to distribute them beside it.
 Use **Primary sources** to see external databases, SharePoint files/lists,
 local/network files, folders, web/API endpoints, OData and Azure storage. The
 source is the external input: a workbook reader, staging query or calculated
-result is not another source. This implementation
+result is not another source. See [CONNECTOR-COVERAGE.md](CONNECTOR-COVERAGE.md)
+for documented functions, supported forms and limitations. This implementation
 is not the complete Microsoft connector catalogue; unsupported sources remain
 visible as unresolved query entries.
 
@@ -115,6 +132,9 @@ spreadsheet-formula-like cells receive a protective leading apostrophe.
 All browser CSV filenames now include the report name (with filename-unsafe
 characters replaced). Explicit command-line `--csv PATH` destinations are
 unchanged. Regenerate the HTML to obtain the new export button.
+
+See [ADVERSARIAL-REVIEW.md](ADVERSARIAL-REVIEW.md) for the consolidated fix
+register, remediation status and reproduction steps.
 
 ## Source objects from M and embedded SQL
 

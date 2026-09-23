@@ -77,6 +77,7 @@ def describe_html(text, filename):
         return None
     title = Path(filename).stem
     generated = ''
+    pbix_source = ''
     match = re.search(r'const DATA\s*=\s*', text)
     if match:
         try:
@@ -84,9 +85,10 @@ def describe_html(text, filename):
             if isinstance(payload, dict):
                 title = str(payload.get('title') or title)
                 generated = str(payload.get('generated') or '')
+                pbix_source = str(payload.get('pbixSource') or '')
         except (ValueError, TypeError):
             pass
-    return dict(title=title, filename=filename, generated=generated, metadata=parser.metadata or {})
+    return dict(title=title, filename=filename, generated=generated, metadata=parser.metadata or {}, pbixSource=pbix_source)
 
 
 def build_catalog(folder, output=None):
@@ -111,5 +113,15 @@ def build_catalog(folder, output=None):
         raise ValueError(f'Refusing to replace non-catalogue file: {output}')
     template = Path(__file__).with_name('catalog.html').read_text(encoding='utf-8')
     template = template.replace('/*__CATALOG__*/[]', json_script(rows))
+    batch_path = folder / 'pbix-batch-results.json'
+    batch = None
+    if batch_path.exists():
+        try:
+            value = json.loads(batch_path.read_text(encoding='utf-8'))
+            if isinstance(value, dict) and isinstance(value.get('files'), list):
+                batch = value
+        except (ValueError, OSError):
+            pass
+    template = template.replace('/*__BATCH__*/null', json_script(batch))
     output.write_text(template, encoding='utf-8')
     return output

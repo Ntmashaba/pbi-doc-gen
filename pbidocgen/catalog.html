@@ -4,9 +4,10 @@
 :root{font-family:Segoe UI,system-ui,sans-serif;color:#182c39;background:#f2f5f6}*{box-sizing:border-box}body{margin:0}header{background:#153544;color:white;padding:42px max(5vw,20px);border-bottom:5px solid #dfb959}header small{letter-spacing:.15em;color:#e4c67b}h1{font-size:clamp(30px,4vw,48px);margin:12px 0}header p{color:#c8dbe3;max-width:720px;line-height:1.6}main{max-width:1200px;margin:auto;padding:30px 20px}.tools{display:flex;flex-wrap:wrap;gap:14px;align-items:center}input[type=search]{flex:1;min-width:210px;padding:14px;border:1px solid #a9bbc4;border-radius:8px;font:inherit}button,.picker{background:#173f51;color:white;padding:12px 18px;border:0;border-radius:7px;font:inherit;cursor:pointer}.picker input{display:block;max-width:240px;margin-top:8px;font:inherit;font-size:12px}#status{color:#506575;margin:20px 0}.tree details{border-left:2px solid #d5dfe3;margin:16px 0;padding-left:18px}summary{font-weight:600;cursor:pointer;padding:8px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.card{background:white;border:1px solid #d7e0e4;border-radius:10px;padding:22px;overflow-wrap:anywhere}.card h3{margin:0 0 10px}.card a{color:#176084}.card small,.muted{color:#617582}.location{font-size:13px;line-height:1.6}footer{padding:20px 0;color:#617582;font-size:13px}a:focus-visible,summary:focus-visible,button:focus-visible{outline:3px solid #c8972d;outline-offset:3px}
 </style></head><body>
 <header><small>PBI DOC GEN / LOCAL WORKSPACE</small><h1>Your report library</h1><p>Browse report documentation, follow its original location, and find the accounts associated with each source.</p></header>
-<main><div class="tools"><input id="search" type="search" placeholder="Search reports, locations or usernames" aria-label="Search reports" oninput="renderCatalog()"><label class="picker">Refresh from folder<input id="folder-picker" type="file" webkitdirectory multiple onchange="scanFiles(this.files)"></label><button onclick="downloadCatalog()">Download refreshed home</button></div><p id="status" role="status"></p><div id="tree" class="tree"></div><footer>The initial list reflects the folder at generation time. To see added files or changed details, select that same folder above. Only HTML files directly inside it are listed. Saving a refreshed home beside those files keeps the links portable.</footer></main>
+<main><div class="tools"><input id="search" type="search" placeholder="Search reports, locations or usernames" aria-label="Search reports" oninput="renderCatalog()"><label class="picker">Refresh from folder<input id="folder-picker" type="file" webkitdirectory multiple onchange="scanFiles(this.files)"></label><button onclick="downloadCatalog()">Download refreshed home</button></div><p id="status" role="status"></p><div id="batch-status"></div><div id="tree" class="tree"></div><footer>The initial list reflects the folder at generation time. To see added files or changed details, select that same folder above. Only HTML files directly inside it are listed. Saving a refreshed home beside those files keeps the links portable.</footer></main>
 <script>
 let entries=/*__CATALOG__*/[];
+let batchReport=/*__BATCH__*/null;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function groupParts(metadata){
  if(metadata.folder) return metadata.folder.split(/[\\/]/).map(s=>s.trim()).filter(Boolean);
@@ -28,10 +29,17 @@ function locationLink(location){
 }
 function card(entry){
  const m=entry.metadata||{},loc=m.reportLocation||'',link=locationLink(loc);
- return `<article class="card"><h3><a href="${esc(entry.blobUrl||entry.href)}" target="_blank" rel="noopener">${esc(entry.title)}</a></h3><small>${esc(entry.filename)}${entry.generated?' · '+esc(entry.generated):''}</small>${loc?`<p class="location">Original location<br>${link?`<a href="${esc(link)}" target="_blank" rel="noopener">${esc(loc)}</a>`:esc(loc)}</p>`:'<p class="muted">No report location recorded</p>'}${(m.connections||[]).filter(c=>c.username).map(c=>`<p class="location">${esc(c.connectionName||c.server||c.sourceType)}<br>Account: <strong>${esc(c.username)}</strong></p>`).join('')}${entry.warning?`<p>${esc(entry.warning)}</p>`:''}</article>`;
+ const failed=batchReport?.files?.find(r=>r.filename===entry.filename&&r.status==='failed');
+ return `<article class="card"><h3><a href="${esc(entry.blobUrl||entry.href)}" target="_blank" rel="noopener">${esc(entry.title)}</a></h3>${failed?'<p><strong>Latest batch failed — showing previous HTML</strong></p>':''}<small>${esc(entry.filename)}${entry.generated?' · '+esc(entry.generated):''}</small>${loc?`<p class="location">Original location<br>${link?`<a href="${esc(link)}" target="_blank" rel="noopener">${esc(loc)}</a>`:esc(loc)}</p>`:'<p class="muted">No report location recorded</p>'}${(m.connections||[]).filter(c=>c.username).map(c=>`<p class="location">${esc(c.connectionName||c.server||c.sourceType)}<br>Account: <strong>${esc(c.username)}</strong></p>`).join('')}${entry.warning?`<p>${esc(entry.warning)}</p>`:''}</article>`;
 }
 function renderBranch(branch){return `${branch.rows.length?'<div class="cards">'+branch.rows.map(card).join('')+'</div>':''}${[...branch.children].sort(([a],[b])=>a.localeCompare(b)).map(([name,child])=>`<details open><summary>${esc(name)}</summary>${renderBranch(child)}</details>`).join('')}`;}
+function renderBatchStatus(){
+ const panel=document.getElementById('batch-status');
+ if(!batchReport||!Array.isArray(batchReport.files)){panel.innerHTML='';return;}
+ panel.innerHTML=`<details style="background:#fff4d8;padding:16px;margin:16px 0" ${batchReport.failed?'open':''}><summary>Last PBIX batch: ${esc(batchReport.generated)} generated · ${esc(batchReport.failed)} failed</summary><p>${esc(batchReport.generatedAt)} · Folder refresh does not rerun extraction.</p>${batchReport.files.map(r=>`<p><strong>${esc(r.title)} — ${esc(r.status)}</strong>${r.mode?' · '+esc(r.mode):''}<br>${esc(r.error||(r.warnings||[]).join(' '))}${r.previousHtmlRetained?'<br><strong>Previous HTML retained — it was not updated in this run.</strong>':''}</p>`).join('')}</details>`;
+}
 function renderCatalog(){
+ renderBatchStatus();
  const q=document.getElementById('search').value.toLowerCase(),filtered=entries.filter(e=>JSON.stringify([e.title,e.filename,e.metadata]).toLowerCase().includes(q));
  const root={children:new Map(),rows:[]};
  for(const entry of filtered){let branch=root;for(const part of groupParts(entry.metadata||{})){if(!branch.children.has(part))branch.children.set(part,{children:new Map(),rows:[]});branch=branch.children.get(part);}branch.rows.push(entry);}
@@ -70,7 +78,7 @@ async function scanFiles(files){
 function downloadCatalog(){
  const clone=document.documentElement.cloneNode(true),script=clone.querySelector('script');
  const rows=entries.map(({blobUrl,...e})=>e);
- const start=script.textContent.indexOf('let entries='),end=script.textContent.indexOf(';\nconst esc=',start);
+ const start=script.textContent.indexOf('let entries='),end=script.textContent.indexOf(';\nlet batchReport=',start);
  script.textContent=script.textContent.slice(0,start)+'let entries='+JSON.stringify(rows).replace(/</g,'\\u003c')+script.textContent.slice(end);
  clone.querySelector('#tree').innerHTML='';clone.querySelector('#search').value='';
  const url=URL.createObjectURL(new Blob(['<!DOCTYPE html>\n'+clone.outerHTML],{type:'text/html;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='pbi-home.html';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
