@@ -56,6 +56,13 @@ same DAX saved under different names, compared after removing whitespace, commen
 and letter case. **Cleanup review** lists the duplicates, and each measure lists
 the visuals that show it, directly or through measures built on it.
 
+Sources are traced through shared queries and parameters, so a table that reads
+a parameterised SQL connection, a file picked from a folder or a dataflow entity
+shows the same named source on every screen. Tables typed into Power Query show as
+"Entered data" and generated calendars as "Generated in Power Query". To check
+detection on your own projects, run
+`python tests/samples/check_sources.py PATH_TO_PBIP_FOLDERS`.
+
 The **home page** (`--catalog`) indexes every report's sources: a "Sources across
 reports" table shows which reports use each server, database or file, and each
 report card shows its sources as tags (select one to filter), its mode, analysis

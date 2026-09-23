@@ -449,6 +449,8 @@ const FILE_SOURCE_TYPES=new Set(['SharePoint file','Excel workbook','CSV file','
 const uniq=a=>[...new Set(a.filter(Boolean))].sort();
 function sourceName(g){
   if(FILE_SOURCE_TYPES.has(g.sourceType)) return g.object||String(g.location||'').split(/[\/\\]/).filter(Boolean).pop()||'Unresolved file';
+  // Same rule as source_labels.source_name: a dataflow is known by its entity.
+  if(/dataflow$/.test(g.sourceType)) return g.object||g.database||'Unresolved entity';
   const obj=g.schema&&g.object?`${g.schema}.${g.object}`:g.object;
   return [g.database,obj].filter(Boolean).join(' · ')||g.server||g.location||'Unresolved';
 }

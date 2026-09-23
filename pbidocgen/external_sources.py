@@ -111,6 +111,8 @@ def navigate_external(base, fields):
         location = conn.get('location', '')
         notes.append('Filename identified but its containing folder is unresolved')
     updated = dict(conn, location=location, server=location)
+    if mode in {'files', 'hierarchy'}:
+        updated['sourceType'] = refine_source_type(conn['sourceType'], location)
     # Hierarchical Content can be either a file or another folder. Preserve the
     # selected path; a document reader will close navigation at the file boundary.
     result.connections = [updated]

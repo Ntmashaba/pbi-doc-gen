@@ -52,7 +52,7 @@ def build_source_objects(model, report, columns):
                                   sql='', referencedM='', primaryQueries=[query_name], evidence='Entity partition metadata',
                                   notes=['Physical connection may require external metadata'], status='Partial' if obj else 'Unresolved')]
             else:
-                extracted = [dict(sourceType='Calculated model table' if part['type'] == 'calculated' else 'No partition',
+                extracted = [dict(sourceType='Calculated (DAX)' if part['type'] == 'calculated' else 'No partition',
                                   server='', database='', schema='', object='', sql='', referencedM='',
                                   evidence='No direct external M/SQL source declared', notes=['Inspect upstream model-table dependencies'],
                                   status='Not applicable')]

@@ -42,12 +42,18 @@ def refine_source_type(source_type: str, location: str | None) -> str:
         return "SharePoint file"
     if source_type == "Web":
         return "Web / API"
-    if source_type == "File":
+    if source_type == "SharePoint files" and is_sharepoint(location) and _extension(location):
+        return "SharePoint file"  # one document picked from a library
+    if source_type in ("File", "Folder"):
+        # A folder navigated to one file is that file; a bare folder stays a folder.
         ext = _extension(location)
+        if source_type == "Folder" and not ext:
+            return source_type
         if ext in _EXCEL:
             return "Excel workbook"
         if ext in _TEXT:
             return "CSV file"
+        return "File"
     return source_type
 
 
@@ -59,6 +65,7 @@ def file_name(location: str) -> str:
 
 
 FILE_TYPES = {"SharePoint file", "Excel workbook", "CSV file", "File"}
+DATAFLOW_TYPES = {"Power BI dataflow", "Power Platform dataflow"}
 
 
 def source_name(src: dict) -> str:
@@ -67,6 +74,8 @@ def source_name(src: dict) -> str:
     location = src.get("location") or src.get("detail") or src.get("server") or ""
     if source_type in FILE_TYPES:
         return file_name(location)
+    if source_type in DATAFLOW_TYPES:
+        return src.get("object") or src.get("database") or ""  # entity names beat workspace GUIDs
     server, database = src.get("server") or "", src.get("database") or ""
     if server or database:
         return " / ".join(x for x in (server, database) if x)

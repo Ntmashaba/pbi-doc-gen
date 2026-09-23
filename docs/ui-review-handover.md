@@ -1,11 +1,11 @@
 # UI & reporting review: handover
 
 **Branch:** `ui-review-fixes`, created from `pbi-doc-gen-pbix-batch` (`29730a8`).
-**Last updated:** 23 September 2026, 19:00 SAST. Latest commit `90a5597`, pushed to `origin/ui-review-fixes`.
+**Last updated:** 23 September 2026, 19:35 SAST.
 
 ## Status
 
-All findings from the review are done except merging the two source parsers, which needs real PBIX extracts to check against. 117 unit tests, both Chromium tests and the jsdom hub check pass.
+All findings from the review are done, including the source-parser merge, which was checked against nine public Power BI projects. 123 unit tests, both Chromium tests and the jsdom hub check pass.
 
 | Finding | Status | Commit |
 |---|---|---|
@@ -13,7 +13,7 @@ All findings from the review are done except merging the two source parsers, whi
 | A1: one broken binding blocks every deletion candidate | Done, with a deliberate change to the suggested fix (see Decisions) | `aefadc9` |
 | A2: unused measures missing from Cleanup review | Done, and whole unused tables added | `aefadc9` |
 | A3: relationship-only "Possible" fills the usage matrix | Done (hidden unless "Include relationship-only" is ticked) | `aefadc9` |
-| A4: same source named differently on each screen | Done for names and labels; parser merge still open | `aefadc9` |
+| A4: same source named differently on each screen | Done: shared names (`aefadc9`), then one source per partition from the M tracer (parser merge) | `aefadc9`, step 7 |
 | A5: unrelated issues in the Impact inspector | Done (follows from A1) | `aefadc9` |
 | B1: opens on the Columns table | Done (opens on Overview) | `b7997e9` |
 | B2: 20 navigation items | Done (six sections with sub-tabs) | `b7997e9` |
@@ -32,6 +32,7 @@ All findings from the review are done except merging the two source parsers, whi
 | D: label what static extraction can't know | Done (note on Overview; no combined health score) | `1701224` |
 | Extra: wide tables scroll sideways on laptops | Done (Columns 9 → 5 columns, source objects 8 → 4) | `1701224` |
 | Extra: `browser_review.cjs` had never passed | Fixed (wrong button name) | `b7997e9` |
+| Extra: real projects showed most sources as "Unknown" | Fixed by the parser merge (48 of 101 partitions → 0) | step 7 |
 
 ### Retail sample, start → now
 
@@ -47,10 +48,22 @@ All findings from the review are done except merging the two source parsers, whi
 | Navigation items | 20 | 6 sections |
 | Mobile top bar | about 180px (after step 2) | about 60px |
 
+### Real projects, before → after the parser merge
+
+`python tests/samples/check_sources.py FOLDER` runs this check on any folder of PBIP projects.
+
+| Measure (101 partitions in 9 projects) | Before | After |
+|---|---|---|
+| Partitions whose source shows as "Unknown" | 48 | 0 |
+| Partitions where Overview and Sources disagree | 77 | 0 |
+| Partitions that had a known source and changed it | n/a | 0 (every change was from "Unknown") |
+
+The projects, all public on GitHub: [microsoft/Analysis-Services](https://github.com/microsoft/Analysis-Services) (`pbidevmode/fabricps-pbip/SamplePBIP`, web CSVs through shared queries), [nox-magistralis/tmdl-lens](https://github.com/nox-magistralis/tmdl-lens) (`sample/`, a fixture of about 20 connector patterns), [javendia/powerbi-semantic-model-testing](https://github.com/javendia/powerbi-semantic-model-testing) (SQL through parameters), [abdeling/portfolio-mining](https://github.com/abdeling/portfolio-mining) (34 tables, folder CSVs), [samueltauil/powerbi-git-demo](https://github.com/samueltauil/powerbi-git-demo) (entered data), [PrathameshKasande/Sales_Data_Analysis](https://github.com/PrathameshKasande/Sales_Data_Analysis) (folder combine, generated calendar), [OskarMiszewski/power-bi-semantic-model-toolkit](https://github.com/OskarMiszewski/power-bi-semantic-model-toolkit) (Excel), [JonathanJihwanKim/pbip-documenter](https://github.com/JonathanJihwanKim/pbip-documenter) (SQL) and [datasciencetrialgit/SalesDashboard](https://github.com/datasciencetrialgit/SalesDashboard) (CSV). They are not vendored into this repo; `tests/test_partition_sources.py` reproduces their patterns.
+
 ### Open
 
-- **Merge the two source parsers.** `model_parser` (Overview, Lineage, Tables) and the M tracer in `m_sources`/`external_sources` (Sources) still find sources by different routes; step 1 only made them use the same names and labels. A merge changes every partition's source, and the synthetic samples cover only SQL Server, a SharePoint workbook and a CSV. Before merging, run one or two real extracts (PBIX, or pbi-tools `model.bim` and `.Report` output) with varied connectors, record every partition's source, merge, and compare.
-- **Possible follow-ups (not in the review):** the CLI `--csv` export covers columns only (measure assessments export from the browser); duplicate detection compares text, not meaning.
+- **Honest limits of static tracing** (labelled, not hidden): custom M functions that wrap a connector, URLs built by string concatenation at refresh time, and "combine all files in a folder" (the folder is named, the individual files are not).
+- **Possible follow-ups (not in the review):** the CLI `--csv` export covers columns only (measure assessments export from the browser); duplicate detection compares text, not meaning; `model_parser`'s regex patterns remain only as a fallback and could be removed once more real projects have been checked.
 
 ### Decisions made along the way
 
@@ -58,12 +71,14 @@ All findings from the review are done except merging the two source parsers, whi
 - **B3:** Primary sources was merged into Sources rather than deleted. Its page-level table, the source objects with code and the M query export are collapsed sections, so every CSV export keeps its name and columns, and `switchTab('primary-sources')` still works.
 - **B2:** view ids did not change; sections only group them. Internal links and saved state keep working.
 - **Hub index:** the hub reads a small, whitelisted `summary` block from each report rather than its full data, so it keeps working as the views change. Reports generated before this change still list, without sources, until regenerated.
+- **Parser merge:** the tracer's result replaces the regex result only when it knows more; the regex result stays when the tracer finds nothing or only an unrecognised connector. Partitions of type query, entity (Direct Lake) and calculated are unchanged.
 - **Commits** are authored as `Ntmashaba` with a `Co-Authored-By: Claude` line; they were not rewritten to a Claude identity.
 
 ## How to check it
 
 ```
-python tests/run_ci.py                                   # 117 tests, must all pass
+python tests/run_ci.py                                   # 123 tests, must all pass
+python tests/samples/check_sources.py PATH_TO_PBIP_PROJECTS  # 0 Unknown / 0 disagreements expected
 python tests/samples/build_retail_sample.py sample-output
 python generate_docs.py --catalog sample-output          # open sample-output/pbi-home.html
 python tests/build_browser_fixture.py
@@ -133,6 +148,14 @@ At this point the hub styling (C) and the mobile menu (B8) were still to do; bot
 ### Step 6 (hub quality counts), `90a5597`
 
 - The report `summary` also carries `measuresDescribed` and `duplicateMeasureSets`; the hub whitelists both and shows "n of N measures described" and a duplicate-set badge on each card.
+
+### Step 7 (source-parser merge, checked on real projects)
+
+- **Finding:** on nine public PBIP projects, `model_parser` showed 48 of 101 partitions as "Unknown" on Overview, Lineage and Tables, mostly because its regex patterns only read a partition's own M and so missed shared queries and parameters. Overview and Sources disagreed on 77.
+- **Merge:** new `pbidocgen/partition_sources.py` runs at the end of `parse_model` and gives every M partition the tracer's best source (resolved, then partial), with `traceStatus`, `tracedFrom` and any `otherSources`. The regex result is kept when the tracer finds nothing, or only an unrecognised connector.
+- **Tracer additions (`m_sources.py`):** Power BI and Power Platform dataflows (workspace, dataflow, entity); "Entered data" for `#table`, `Table.FromRows`/`FromRecords`/`FromColumns`; "Generated in Power Query" for date and number lists (a calendar built from another query's dates keeps that query as its source); Snowflake, Databricks and Azure SQL under the regex parser's names; any other `Namespace.Function("…")` outside the standard library as "(unrecognised connector)", still counted as unresolved coverage. `#name(...)` calls are now parsed.
+- **Labels (`source_labels.py`):** a file picked from a folder or a SharePoint library is named as that file (`CSV file · DimArea.csv`, `SharePoint file · …`); dataflows are named by entity. Calculated tables are "Calculated (DAX)" on every screen.
+- **Tests:** `tests/test_partition_sources.py` (6 tests on these patterns, including "nothing left Unknown" and "Overview and Sources agree"); two existing expectations updated for the new names. `tests/samples/check_sources.py` is the real-project check.
 
 ## Original findings
 

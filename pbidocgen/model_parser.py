@@ -28,7 +28,7 @@ from .input_validation import validate_model
 from pathlib import Path
 from .source_inventory import enrich_source
 from .source_labels import refine_source_type, source_label
-from .source_labels import refine_source_type, source_label
+from .partition_sources import apply_traced_sources
 
 
 # --------------------------------------------------------------------------
@@ -533,7 +533,7 @@ def parse_model(model_path: str | Path) -> dict:
         warnings.append({"severity": "warning", "category": "Unreadable definition",
                          "message": msg})
 
-    return {
+    result = {
         "name": model.get("name") or bim_path.stem,
         "dependencyExpressions": _dependency_expressions(model),
         "expressions": [{"name": e.get("name", ""), "kind": e.get("kind", "m"),
@@ -549,6 +549,10 @@ def parse_model(model_path: str | Path) -> dict:
         "roles": roles_out,
         "warnings": warnings,
     }
+    # Replace per-partition regex guesses with the traced source where the
+    # tracer knows more (shared queries, parameters, dataflows, entered data).
+    apply_traced_sources(result)
+    return result
 
 
 def _dependency_expressions(model: dict) -> list[dict]:

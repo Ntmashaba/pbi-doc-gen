@@ -33,7 +33,8 @@ def build_primary_sources(model, report, source_objects, analysis_issues=None, t
         if item['status'] == 'Not applicable':
             continue
         origins = item.get('primaryQueries', [])
-        if not origins or item['sourceType'] == 'Unknown':
+        # Unrecognised connectors are named but still count as unresolved coverage.
+        if not origins or item['sourceType'] == 'Unknown' or item['sourceType'].endswith('(unrecognised connector)'):
             key = (item['report'], item['pageId'], item['pageScope'], item['queryName'])
             unresolved[key] = {k: item[k] for k in ('report', 'page', 'pageId', 'pageScope', 'queryName')}
             # Unknown inputs remain in the metadata export as coverage rows.

@@ -20,7 +20,8 @@ class ExternalSourceTests(unittest.TestCase):
         code = 'let S=SharePoint.Files("https://tenant.sharepoint.com/sites/BI"), B=S{[Name="Budget.xlsx",#"Folder Path"="https://tenant.sharepoint.com/sites/BI/Documents/"]}[Content], W=Excel.Workbook(B), T=W{[Item="Budget",Kind="Sheet"]}[Data] in T'
         rows = self.rows(code)
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['sourceType'], 'SharePoint files')
+        # One document picked from a library is a SharePoint file, as with Web.Contents.
+        self.assertEqual(rows[0]['sourceType'], 'SharePoint file')
         self.assertEqual(rows[0]['location'], 'https://tenant.sharepoint.com/sites/BI/Documents/Budget.xlsx')
         self.assertEqual(rows[0]['object'], 'Budget.xlsx')
         self.assertEqual(rows[0]['status'], 'Resolved')
@@ -142,6 +143,8 @@ class SourceUsageTests(unittest.TestCase):
     def test_unknown_custom_connector_remains_in_export_rows(self):
         data=self.inventory(code='CustomPlatform.Fetch("account")')
         self.assertEqual(len(data['rows']), 1)
-        self.assertEqual(data['rows'][0]['sourceType'], 'Unknown')
+        # The connector is named rather than reported as Unknown, but stays unresolved.
+        self.assertEqual(data['rows'][0]['sourceType'], 'CustomPlatform.Fetch (unrecognised connector)')
+        self.assertEqual(data['rows'][0]['status'], 'Unresolved')
         self.assertEqual(data['rows'][0]['reportingStatus'], 'Usage unresolved')
         self.assertEqual(len(data['unresolved']), 1)
