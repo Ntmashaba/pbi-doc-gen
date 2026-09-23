@@ -31,7 +31,9 @@ def apply_traced_sources(model: dict) -> None:
             rows = [r for r in materialize(tracer.trace(part.get('expression') or '', query_name)) if _known(r)]
             if not rows:
                 continue
-            rows.sort(key=lambda r: (_RANK.get(r['status'], 9), r['sourceType'], r.get('server') or '', r.get('object') or ''))
+            # Stable: among equally resolved rows keep the tracer's order, so a
+            # native query's first FROM table (not the alphabetically first) leads.
+            rows.sort(key=lambda r: _RANK.get(r['status'], 9))
             best = rows[0]
             current = part['source']
             regex_known = current.get('sourceType') not in (None, 'Unknown')
@@ -46,6 +48,7 @@ def apply_traced_sources(model: dict) -> None:
                            schema=best.get('schema') or None,
                            object=best.get('object') or None,
                            detail=location or current.get('detail'),
+                           nativeQuery=bool(best.get('sql')) or bool(current.get('nativeQuery')),
                            traceStatus=best['status'],
                            tracedFrom=sorted(set(best.get('primaryQueries') or [])))
             if best['sourceType'] in INTERNAL_SOURCES:

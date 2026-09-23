@@ -641,8 +641,20 @@ def materialize(value):
         notes = set(row.get('notes', [])) | set(value.issues)
         if not row.get('server'):
             notes.add('Server/connection unresolved')
-        if not row.get('database') and not row.get('navigationMode'):
+        tns_alias = (row.get('sourceType') == 'Oracle' and row.get('server')
+                     and not any(c in row['server'] for c in '/:('))
+        # An Oracle TNS alias names the service itself; Teradata has no database
+        # in its connection (it is the navigation schema or the SQL qualifier).
+        if not row.get('database') and not row.get('navigationMode') and not tns_alias \
+                and not (row.get('sourceType') == 'Teradata' and row.get('object')):
             notes.add('Database/service not supplied or unresolved')
+        if row.get('sourceType') == 'Oracle' and row.get('sql'):
+            # Oracle folds unquoted identifiers to upper case: billing.tariff_plan
+            # and BILLING.TARIFF_PLAN are one object.
+            for key in ('schema', 'object'):
+                name = row.get(key) or ''
+                if name and f'"{name}"' not in row['sql']:
+                    row[key] = name.upper()
         row['notes'] = sorted(notes)
         row['status'] = 'Unresolved' if not row['object'] else 'Partial' if notes else 'Resolved'
         row['preparationEffects'] = sorted(set(value.effects))
