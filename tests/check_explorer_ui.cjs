@@ -23,15 +23,46 @@ function mount(html){
     mounted.push(el);
   }
 }
+const historyEntries=[], listeners={};
+const browserWindow={scrollTo(){},location:{hash:''},addEventListener(name,fn){listeners[name]=fn;},history:{
+ pushState(_state,_title,hash){historyEntries.push(hash);browserWindow.location.hash=hash;},
+ replaceState(_state,_title,hash){browserWindow.location.hash=hash;}
+}};
 const context=vm.createContext({console,setTimeout,document:{getElementById:node,
  querySelectorAll:s=>s.startsWith('#main input')?mounted.filter(e=>['INPUT','SELECT'].includes(e.tagName)):[],
- createElement:()=>({}),body:{appendChild(){}}},window:{scrollTo(){}}});
+ createElement:()=>({}),body:{appendChild(){}}},window:browserWindow});
 vm.runInContext(html.match(/<script>([\s\S]*)<\/script>/)[1],context);
 const run=s=>vm.runInContext(s,context);
 const same=(a,b)=>assert.equal(JSON.stringify(a),JSON.stringify(b));
+// Sections have deep links; Back restores the prior view without adding history.
+const routeTarget=run("TABS.find(t=>t.avail&&t.id!=='overview').id");
+run(`switchTab(${JSON.stringify(routeTarget)})`);assert.equal(browserWindow.location.hash,'#'+routeTarget);
+const historyCount=historyEntries.length;
+run(`switchTab(${JSON.stringify(routeTarget)})`);assert.equal(historyEntries.length,historyCount);
+browserWindow.location.hash='#overview';listeners.popstate();
+assert.equal(run('activeTab'),'overview');assert.equal(historyEntries.length,historyCount);
+browserWindow.location.hash='#does-not-exist';listeners.popstate();assert.equal(run('activeTab'),'overview');
+assert.match(node('nav').innerHTML,/href="pbi-home.html#reports"/);
 // Every available view must render in every supported extraction mode.
 for(const tab of run('TABS.filter(t=>t.avail).map(t=>t.id)')) run(`switchTab(${JSON.stringify(tab)})`);
 if(!run('has.model&&has.report')){console.log('Available mode views rendered');process.exit(0);}
+// Relationship focus filters details, preserves connected nodes, and bounds zoom.
+run("switchTab('rels')");
+assert.match(node('erd').innerHTML,/role="button"/);
+const focusName=run('M.relationships[0].fromTable');
+run(`focusERD(${JSON.stringify(focusName)})`);
+assert.equal(node('erd-focus').value,focusName);
+assert.match(node('erd').innerHTML,/aria-pressed="true"/);
+assert.match(node('erd-selection').innerHTML,/Showing connections/);
+run('zoomERD(10)');assert.equal(node('erd-zoom-label').textContent,'250%');
+run('zoomERD(-10)');assert.equal(node('erd-zoom-label').textContent,'50%');
+run('resetERD()');assert.equal(node('erd-zoom-label').textContent,'100%');assert.equal(node('erd-focus').value,'');
+// Same-column and self relationships remain visible; empty models have an explicit state.
+run("savedRels=M.relationships;savedTables=M.tables;M.tables=[{name:'A',tableType:'fact'},{name:'B',tableType:'fact'}];M.relationships=[{fromTable:'A',toTable:'B',isActive:false,crossFilteringBehavior:'bothDirections'},{fromTable:'A',toTable:'A',isActive:true}];drawERD()");
+assert.match(node('erd').innerHTML,/stroke="var\(--warn\)"/);assert.match(node('erd').innerHTML,/stroke-dasharray="8 6"/);
+assert.ok(!node('erd').innerHTML.includes('NaN'));
+run('M.relationships=[];drawERD()');assert.match(node('erd').innerHTML,/No relationships in this model/);
+run('M.relationships=savedRels;M.tables=savedTables;resetERD()');
 run("switchTab('columns')");node('column-search').value='Amount';run('filterColumns()');
 run("setPageScope('p2');switchTab('tables')");assert.equal(node('global-page').value,'p2');
 assert.equal(run("sourceRows('Orders').length"),1);

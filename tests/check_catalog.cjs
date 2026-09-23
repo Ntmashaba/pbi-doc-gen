@@ -19,3 +19,11 @@ assert.ok(node('tree').innerHTML.includes('&lt;b&gt;Finance'));
 node('search').value='reader';run('renderCatalog()');assert.match(node('status').textContent,/1 of 1/);
 node('search').value='unmatched';run('renderCatalog()');assert.match(node('status').textContent,/0 of 1/);
 console.log('Catalogue grouping, links, escaping and username search passed.');
+
+// Library routes reveal one workspace view, and report links stay in this tab.
+const navLinks=['reports','sources','manage'].map(view=>({dataset:{view},setAttribute(){},removeAttribute(){}}));
+ctx.window={location:{hash:'#sources'}};ctx.document.querySelectorAll=()=>navLinks;
+run('libraryRoute()');assert.equal(node('reports-view').hidden,true);assert.equal(node('sources-view').hidden,false);
+ctx.window.location.hash='#manage';run('libraryRoute()');assert.equal(node('manage-view').hidden,false);assert.equal(node('sources-view').hidden,true);
+ctx.window.location.hash='#reports';run('libraryRoute()');assert.equal(node('reports-view').hidden,false);
+assert.doesNotMatch(run("card({title:'Report',filename:'report.html',href:'report.html',metadata:{}})"),/target="_blank"/);
