@@ -66,6 +66,25 @@ def _collect_aliases(node, aliases: dict):
             _collect_aliases(v, aliases)
 
 
+# Alias bound to a subquery (From item with an Expression): its columns are
+# query outputs, not model fields.
+_SUBQUERY = "\0subquery"
+
+
+def _scoped_aliases(node: dict, aliases: dict) -> dict:
+    """A query's From list rebinds its aliases; the same letter can name a
+    different table in a sibling query (o = Opportunities here, Owners there)."""
+    items = node.get("From")
+    if not isinstance(items, list):
+        return aliases
+    scoped = dict(aliases)
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("Name"), str):
+            entity = item.get("Entity")
+            scoped[item["Name"]] = entity if isinstance(entity, str) else _SUBQUERY
+    return scoped
+
+
 def _source_entity(expr, aliases: dict):
     """Resolve the table behind an Expression.SourceRef node."""
     if not isinstance(expr, dict):
@@ -89,6 +108,7 @@ def _source_entity(expr, aliases: dict):
 def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
     """Find every Column/Measure/HierarchyLevel/Aggregation reference."""
     if isinstance(node, dict):
+        aliases = _scoped_aliases(node, aliases)
         for kind in _FIELD_KINDS:
             if kind in node and isinstance(node[kind], dict):
                 inner = node[kind]
@@ -107,13 +127,13 @@ def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
                         # Auto date/time hierarchy: the visual uses this date column
                         # through its hidden date table, not a model hierarchy.
                         table = _source_entity(variation, aliases)
-                        if table:
+                        if table and table != _SUBQUERY:
                             out.append({"table": table, "field": variation["Property"],
                                          "kind": "column", "context": context})
                         continue
                     table = _source_entity(hierarchy.get("Expression", {}), aliases) \
                         or _source_entity(hierarchy, aliases)
-                    if table and level:
+                    if table and level and table != _SUBQUERY:
                         out.append({"table": table, "field": level,
                                     "hierarchy": hierarchy.get("Hierarchy"),
                                     "kind": "hierarchyLevel", "context": context})
@@ -126,9 +146,13 @@ def _collect_field_refs(node, aliases: dict, out: list, context: str = ""):
                     # transform's real inputs are collected from its own query.
                     continue
                 table = _source_entity(expression, aliases)
+                if table == _SUBQUERY:
+                    continue
                 if not table and isinstance(prop, str) and "." in prop:
-                    # Text-box dynamic values store "Table.Column" with no SourceRef.
-                    table, prop = prop.split(".", 1)
+                    # A "Table.Field" name with no SourceRef is a query label (text-box
+                    # dynamic values); the prefix need not be the home table. The real
+                    # field is collected from the visual's query.
+                    continue
                 if prop:
                     out.append({
                         "table": table,

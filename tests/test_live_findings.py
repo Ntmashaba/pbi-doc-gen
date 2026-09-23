@@ -49,10 +49,21 @@ class ReportLayoutTests(unittest.TestCase):
                                                     "Property": "forecastValue"}}, col("Calendar", "Date")]}, {}, out)
         self.assertEqual([(f["table"], f["field"]) for f in out], [("Calendar", "Date")])
 
-    def test_textbox_dotted_field_without_source_names_its_table(self):
+    def test_textbox_query_label_without_source_is_not_a_binding(self):
         refs = []
         _collect_field_refs({"Column": {"Expression": {}, "Property": "IT Area.IT Sub Area ID"}}, {}, refs)
-        self.assertEqual((refs[0]["table"], refs[0]["field"]), ("IT Area", "IT Sub Area ID"))
+        self.assertEqual(refs, [])
+
+    def test_aliases_are_scoped_to_each_query(self):
+        col = lambda src, prop: {"Column": {"Expression": {"SourceRef": {"Source": src}}, "Property": prop}}
+        node = {"a": {"From": [{"Name": "o", "Entity": "Opportunities"}], "Select": [col("o", "Value")]},
+                "b": {"From": [{"Name": "o", "Entity": "Owners"}], "Select": [col("o", "Owner")]},
+                "c": {"From": [{"Name": "q", "Expression": {"Subquery": {}}, "Type": 2}],
+                      "Select": [col("q", "Opportunity Forecast Adjustment.Forecast Adjustment Value")]}}
+        refs = []
+        _collect_field_refs(node, {"o": "Owners"}, refs)
+        self.assertEqual({(r["table"], r["field"]) for r in refs},
+                         {("Opportunities", "Value"), ("Owners", "Owner")})
 
     def test_auto_date_hierarchy_uses_its_date_column(self):
         out = []
