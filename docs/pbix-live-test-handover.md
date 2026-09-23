@@ -172,3 +172,33 @@ Sources now covered: Excel, SQL Server (incl. native queries), OData, Web/API, C
 Also downloaded to `pbix-samples/` for a Windows batch run: seven Microsoft PBIX files (OData, CSV, SQL, Web API) and `Snowflake_Usage_Sample.pbix` (no licence; local use only). See `pbix-samples/SOURCE-more.txt`.
 
 Still untested: DirectQuery, live connections to a published dataset, Databricks, dataflows. No public PBIX was found; a synthetic PBIP fixture would cover them.
+
+## Final state (23 September 2026, commit 9236a53)
+
+All 16 PBIX files in `pbix-samples/` generate without errors; every tab of every page opens in Chromium without script errors; no source is Unknown. 158 unit tests, `browser_review.cjs` and `browser_catalog.cjs` pass.
+
+### Synthetic source samples
+
+No public PBIX uses these connectors, so two scripts build models with the M Power BI Desktop writes for them (tests in `test_enterprise_sample.py` and `test_files_sample.py`):
+
+- `tests/samples/build_enterprise_sample.py` (Network Operations): Teradata (navigation through a shared query in DirectQuery, native SQL in Dual, ODBC DSN), Oracle (parameterised service, `Value.NativeQuery`, TNS alias), Databricks Unity Catalog, Power Platform dataflow.
+- `tests/samples/build_files_sample.py` (Field Services): SharePoint lists (Online by title and GUID, on-premises), SharePoint files (`SharePoint.Files`, `SharePoint.Contents`, OneDrive URL), Windows files (local drive, UNC, mapped drive JSON) and a UNC folder combined with the generated helper queries.
+
+Run either with an output folder to get an HTML page.
+
+### Behaviour worth knowing
+
+- For some older PBIX files pbi-tools ignores `-extractFolder`, uses its Default (TMDL) layout and writes next to the PBIX. The batch moves that folder into its working folder and notes it in the log. Delete any such leftover folder before a rerun.
+- Legacy provider sources (`SELECT * FROM [T]` against `Microsoft.PowerBI.OleDb`) are traced through the Power Query packed in the data source, in Raw JSON, folder and TMDL extracts.
+- The legacy-layout caution no longer blocks cleanup; only a visual whose data query could not be read holds every field in Review.
+- `COUNTROWS(T)`/`ISEMPTY(T)` do not make every column of T a dependency; `COUNTROWS(DISTINCT(T))` still does.
+- UI: slate/indigo palette (tokens at the end of `template.html` and `catalog.html`), Primary sources has its own tab, decorative visuals fold in the Pages view, readable visual and custom-visual names, raw page IDs only in tooltips.
+
+### Still open
+
+- Formatting-only references: warnings say where a reference is used, not that it comes from a formatting rule.
+- Custom visual display names from the report's custom visual list.
+- A PBIR report without `report.json` blocks all cleanup.
+- Windows CI job running the PBIX batch on the samples.
+- Untested against real files: DirectQuery to a live database, live connections to a published dataset. The synthetic samples cover the M patterns only.
+- SharePoint lists referenced only by GUID show the GUID (the title is not in the report).
