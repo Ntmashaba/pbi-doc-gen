@@ -66,11 +66,11 @@ def filters(blob, level, target):
     return _collect_filters(blob.get('filters'), aliases, level, target)
 
 
-PBIX_WARNING = ('PBIX report adapted from pbi-tools legacy layout. Custom visuals, runtime selections and bookmark '
-                'page attribution may be incomplete; deletion recommendations require PBIR validation.')
-LEGACY_WARNING = ('Report is in the legacy single-file layout (report.json). Custom visuals, runtime selections and '
-                  'bookmark page attribution may be incomplete; deletion recommendations require PBIR validation. '
-                  'Save the project with the PBIR format enabled for full coverage.')
+PBIX_WARNING = ('PBIX report read from the legacy layout. Bookmark page attribution is best-effort; cleanup holds every '
+                'field in Review only if a visual\'s data bindings cannot be read.')
+LEGACY_WARNING = ('Report is in the legacy single-file layout (report.json). Bookmark page attribution is best-effort; '
+                  'cleanup holds every field in Review only if a visual\'s data bindings cannot be read. Save the '
+                  'project with the PBIR format enabled for full coverage.')
 
 
 def _visual(visual, label, fallback_id):
@@ -99,8 +99,10 @@ def _visual(visual, label, fallback_id):
         # Q&A answers are re-derived from the question at runtime.
         for f in fields:
             f['runtime'] = True
+    # A data query we could not turn into fields: its bindings are unknown.
+    unreadable = not fields and bool(visual.get('query') or visual.get('dataTransforms'))
     return vf, dict(id=vid, type=vtype, title=title, hidden=bool(vc.get('isHidden', False)), fields=fields,
-                    filters=vf, **{k: position.get(k) for k in ('x', 'y', 'width', 'height')})
+                    filters=vf, unreadableBindings=unreadable, **{k: position.get(k) for k in ('x', 'y', 'width', 'height')})
 
 
 def _build(report, sections, bookmarks, name, warning):
@@ -137,7 +139,7 @@ def _build(report, sections, bookmarks, name, warning):
         raise ValueError('No report pages were extracted; refusing to produce an apparently complete report')
     return attach_report_locations(dict(name=name, pages=pages, reportFilters=filters(report, 'report', '(entire report)'),
         otherFields=refs({k: v for k, v in report.items() if k != 'sections'}, 'report expression'),
-        bookmarks=bookmarks, manifest=[], warnings=[{
+        bookmarks=bookmarks, manifest=[], legacyLayout=True, warnings=[{
             'severity': 'warning', 'category': 'Legacy report layout', 'message': warning}]))
 
 

@@ -27,6 +27,14 @@ def _names_table(text: str, table: str) -> bool:
         re.fullmatch(r"[^\W\d]\w*", table) and re.search(r"(?<![\w'])" + re.escape(table) + r"(?![\w'])", text, re.I))
 
 
+_CUSTOM_VISUAL = re.compile(r"PBI_CV_|[0-9A-Fa-f]{32}$|\d{8,}$")
+
+
+def _custom_visual(visual_type) -> bool:
+    """Custom visual types carry a GUID or timestamp; their bindings are opaque."""
+    return bool(visual_type and _CUSTOM_VISUAL.search(str(visual_type)))
+
+
 def build_column_usage(model: dict, report: dict | None) -> dict:
     tables = {t["name"]: t for t in model["tables"]}
     table_lookup = {t.casefold(): t for t in tables}
@@ -349,7 +357,19 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                 consume(f, [], "Bookmark: " + bookmark["name"], bookmark=True)
         if not pages:
             issues.add("No report pages parsed")
-        issues.update(w["message"] for w in report["warnings"])
+        legacy = report.get("legacyLayout")
+        # The legacy-layout caution is scoped below instead of blocking everything.
+        issues.update(w["message"] for w in report["warnings"]
+                      if not (legacy and w.get("category") == "Legacy report layout"))
+        if legacy:
+            # Bookmark fields already count as used (Keep); only their page is
+            # uncertain, which does not change a deletion decision.
+            for page in pages.values():
+                for v in page["visuals"]:
+                    if v.get("unreadableBindings") or (_custom_visual(v.get("type")) and not v["fields"]
+                                                        and v.get("unreadableBindings") is None):
+                        issues.add(f"Legacy layout: bindings of custom visual '{v.get('title') or v['type']}'"
+                                   f" on {page['name']} could not be read")
     else:
         issues.add("No report supplied; report usage is unknown")
     issues.update(w["message"] for w in model["warnings"] if w["category"] == "Unreadable definition")

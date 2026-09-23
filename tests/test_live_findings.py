@@ -112,6 +112,17 @@ class ReportLayoutTests(unittest.TestCase):
         analysis = build_column_usage(model({"Sales": ["Amount", "Old"]}), report)
         self.assertFalse(any("Dates" in i for i in analysis["issues"]))
 
+    def test_legacy_layout_caution_is_scoped(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "report.json").write_text(json.dumps(self.layout()))
+            report = parse_legacy_layout(Path(d), "Sales")
+        rows = lambda r: {x["column"]: x["decision"] for x in build_column_usage(model({"Sales": ["Amount", "Old"]}), r)["rows"]}
+        self.assertEqual(rows(report)["Old"], "Deletion candidate")
+        # A visual with a data query we could not read blocks every candidate.
+        report["pages"][0]["visuals"].append({"id": "cv", "type": "PBI_CV_0123", "title": None, "fields": [],
+                                              "filters": [], "unreadableBindings": True})
+        self.assertEqual(rows(report)["Old"], "Review")
+
     def test_pbi_tools_bookmark_folders_are_one_bookmark_each(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
