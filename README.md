@@ -13,17 +13,18 @@ works offline and can be emailed, put on SharePoint or committed to a repo.
 ## Contents
 
 1. [Quick start](#quick-start)
-2. [Supported inputs](#supported-inputs)
-3. [What is in a report page](#what-is-in-a-report-page)
-4. [Sources](#sources)
-5. [Cleanup: which columns and measures can be removed](#cleanup-which-columns-and-measures-can-be-removed)
-6. [Warnings](#warnings)
-7. [The report library and report details](#the-report-library-and-report-details)
-8. [Other outputs: CSV, JSON, Word, agent context](#other-outputs-csv-json-word-agent-context)
-9. [Command-line reference](#command-line-reference)
-10. [Limitations](#limitations)
-11. [Development and testing](#development-and-testing)
-12. [Repository layout](#repository-layout)
+2. [Examples with the sample files](#examples-with-the-sample-files)
+3. [Supported inputs](#supported-inputs)
+4. [What is in a report page](#what-is-in-a-report-page)
+5. [Sources](#sources)
+6. [Cleanup: which columns and measures can be removed](#cleanup-which-columns-and-measures-can-be-removed)
+7. [Warnings](#warnings)
+8. [The report library and report details](#the-report-library-and-report-details)
+9. [Other outputs: CSV, JSON, Word, agent context](#other-outputs-csv-json-word-agent-context)
+10. [Command-line reference](#command-line-reference)
+11. [Limitations](#limitations)
+12. [Development and testing](#development-and-testing)
+13. [Repository layout](#repository-layout)
 
 ## Quick start
 
@@ -64,6 +65,131 @@ To save a PBIX as a project: in Power BI Desktop choose **File → Save as** and
 `.pbip` type. Recent Desktop versions save the model as TMDL and the report as
 PBIR by default; older versions may need the preview features enabled under
 **File → Options and settings → Options → Preview features**.
+
+## Examples with the sample files
+
+`pbix-samples/` holds 15 real Power BI files from Microsoft (see its README).
+Each example below says what to run and where to look. Commands are for
+PowerShell from the repository root, with pbi-tools in `pbi-tools\`.
+
+### 1. Document all the samples and open the library
+
+```powershell
+python generate_docs.py --pbix-folder pbix-samples --output-dir pbix-samples\documentation --pbi-tools pbi-tools\pbi-tools.exe
+```
+
+Open `pbix-samples\documentation\pbi-home.html`. Each report card shows its
+mode, analysis coverage, cleanup candidates and sources. Select a source tag to
+filter the cards, or open **Sources** in the left rail to see which reports share
+a server or file. The two older demos (2018 October, 2019 July) are the ones
+pbi-tools writes next to the PBIX; the batch picks that up without any action.
+
+### 2. One report: where does the data come from?
+
+```powershell
+python generate_docs.py --pbix "pbix-samples\COVID Bakeoff.pbix" --output-dir pbix-samples\documentation --pbi-tools pbi-tools\pbi-tools.exe
+```
+
+In **COVID Bakeoff**, go to **Data & sources**:
+
+- **Sources**: one row per source (web APIs, CSV files, SQL Server and Excel),
+  with the tables and pages each feeds. Select a row for its connection, queries
+  and code.
+- **Primary sources**: the same inputs per report page. **Export primary sources
+  CSV** saves the list.
+- **Lineage**: select a source or a page to highlight every path between them.
+
+Compare **Human Resources Sample PBIX** for SQL Server native queries (each object
+named in the SQL is listed, e.g. `hr.bu`), **2018SU10 Blog Demo - October** for an
+OData feed, **PerformanceAnalyzerExportReport** for JSON files and
+**Supply Chain Sample** for Azure Blob Storage.
+
+### 3. What can I remove?
+
+Open **Adventure Works DW 2020 → Review issues → Cleanup review** and choose
+**Deletion candidate**: 26 columns with no reference in the model or report. Each
+row says why, and **Export evidence at column/page grain** saves the list. Switch
+the assessment to **Keep** to see what holds the rest (relationships, measures,
+sort-by columns…).
+
+Other samples show the rules at work:
+
+- **2020SU09 Blog Demo - September**: the `Online Sales` columns stay in
+  **Review** because the report uses `Online Sales[Spending]`, which the model
+  does not have.
+- **2020SU11 Blog Demo - November**: 50 candidates, even though a measure uses
+  `COUNTROWS('Online Sales')`. Counting rows does not depend on any column.
+- **Revenue Opportunities**: every table is typed into the file ("Entered data"),
+  so there are no external sources, but still 34 candidates.
+- **Overview** in any report lists duplicate measures (the same DAX under two names)
+  and how many measures, columns and tables have descriptions.
+
+### 4. What breaks if I change this?
+
+Open **Adventure Works DW 2020 → Impact & usage → Impact inspector**, choose a
+column or measure, and follow its paths down to the visuals that show it.
+**Usage matrix** shows which tables and columns feed each page; select a cell for
+the evidence. Use the **Report page** selector at the top to focus every view on
+one page.
+
+### 5. What is on each page?
+
+- **Corporate Spend → Pages & visuals → Page layout**: each page drawn from its
+  saved layout, visuals named by type and first field ("Card · Var to Plan %"),
+  with the measures (Σ) and columns each uses. Select a visual for its bindings
+  and filters.
+- **Sales & Returns Sample v201912 → Pages**: dozens of buttons, shapes and images
+  are folded into one "decorative visuals" row per page, so the data visuals stand
+  out. Custom visuals show their real names ("Mapbox Visual (custom)").
+- **Filters** and **Field manifest** list every filter and every field the report
+  uses, and where.
+
+### 6. What is wrong with this report?
+
+Open **Review issues → Warnings**:
+
+- **Regional Sales Sample**: "A formatting rule refers to Page Details[Facility],
+  but table 'Page Details' does not exist", with the visuals it is on, and a page
+  filter on a column that no longer exists.
+- **Sales & Returns Sample v201912**: `Sales[Dates]` is missing but used by
+  report-level filters, bookmarks and a Q&A visual.
+- Model warnings: inactive relationships and bidirectional filters in
+  **Adventure Works DW 2020**, disconnected tables in **Supply Chain Sample**.
+
+### 7. Record where a report lives and who connects
+
+In any report, open **Report details**: set the original location (for example
+`\\fileserver\Reports\Finance\Corporate Spend.pbix`), a library folder
+(`Finance / Monthly`) and connection notes such as the service account. Choose
+**Download updated HTML** and replace the file. The library groups the report
+under that folder, and the details survive the next batch run.
+
+### 8. JSON, CSV, Word and agent outputs (PBIP)
+
+These need a Power BI project. Open a sample in Power BI Desktop, choose
+**File → Save as**, pick the `.pbip` type (for example
+`C:\Temp\Corporate Spend.pbip`), then:
+
+```powershell
+python generate_docs.py --project "C:\Temp\Corporate Spend.pbip" --output docs\CorporateSpend.html --json docs\CorporateSpend.json --csv docs\CorporateSpend-columns.csv --word docs\CorporateSpend.docx --agent
+```
+
+This writes the HTML, the analysis as JSON, the column and page inventory as CSV,
+a Word handover document, and `CorporateSpend.agent.md` for LLM agents.
+
+### 9. Connectors the real samples do not cover
+
+```
+python tests/samples/build_enterprise_sample.py sample-output
+python tests/samples/build_files_sample.py sample-output
+```
+
+`sample-output\Network Operations.html` shows Teradata (navigation, native SQL,
+ODBC), Oracle (service parameter, TNS alias, `Value.NativeQuery`), Databricks, a
+Power Platform dataflow and DirectQuery/Dual storage. `sample-output\Field
+Services.html` shows SharePoint lists and files, local, UNC and mapped-drive files,
+and a folder combined with "Combine files". Both use invented names;
+`sample-output/` is ignored by git.
 
 ## Supported inputs
 
@@ -293,7 +419,7 @@ Samples for trying the tool or checking changes:
 | `tests/samples/check_pbix_samples.py SRC` | Runs the 29 reports pre-extracted in [pbi-tools/pbix-samples](https://github.com/pbi-tools/pbix-samples) (pinned commit in the script) |
 | `tests/samples/check_sources.py FOLDER` | Reports detected sources for your own PBIP projects |
 
-The live-test notes and remaining ideas are in `docs/pbix-live-test-handover.md`.
+Real sample PBIX files are in `pbix-samples/`; see its README for where they come from.
 
 ## Repository layout
 
@@ -322,5 +448,4 @@ pbidocgen/
   catalog.py, catalog.html  the report library
   word_writer.py, agent_writer.py   Word and agent outputs
 tests/                    unit tests, browser checks and samples
-docs/                     handover notes
 ```
