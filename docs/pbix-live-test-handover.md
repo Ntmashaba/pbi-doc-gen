@@ -200,7 +200,8 @@ Run either with an output folder to get an HTML page.
 - Custom visual display names come from `CustomVisuals/<id>/package.json` in the PBIX or the PBIP report folder (Mapbox Visual, Play Axis, Correlation plot).
 - A PBIR report without `report.json` is an info note (no report-level filters), not a cleanup blocker; missing pages still block.
 - SharePoint lists picked by ID read "List ID 7c1b0c9e… (title not in report)".
-- CI: `docs/github-actions-ci.yml` (copy to `.github/workflows/ci.yml`; remote tools cannot write `.github`). Linux: suite + Chromium checks. Windows: suite + `tests/samples/check_pbix_samples.py` over the 29 pbi-tools extracts at a pinned commit. A real PBIX extraction still needs Power BI Desktop, which hosted runners lack.
+- CI: not wanted for now (workflow removed). `tests/samples/check_pbix_samples.py` runs the 29 pbi-tools extracts locally.
+- A reference to a table the model does not have (T[F] with T missing) is still reported but no longer blocks cleanup: it cannot depend on an existing column. Bare references (no table) and missing columns on existing tables still block. Effect: 2018 October 0 -> 32 candidates, 2019 July 0 -> 39, COVID Bakeoff 0 -> 37, Regional Sales 0 -> 7.
 
 ### Still open
 

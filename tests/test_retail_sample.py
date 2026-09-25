@@ -50,11 +50,21 @@ class RetailSampleTests(unittest.TestCase):
         rows = decisions(build_column_usage(self.model, report))
         self.assertFalse(any(r["decision"] == "Deletion candidate" for r in rows.values()))
 
-    def test_unknown_table_binding_stays_global(self):
+    def test_missing_table_binding_is_reported_but_blocks_nothing(self):
+        # Nope is not in the model, so Nope[X] cannot depend on any existing column.
         report = copy.deepcopy(REPORT)
+        baseline = build_column_usage(self.model, copy.deepcopy(REPORT))
         report["pages"][0]["visuals"][0]["fields"].append(dict(table="Nope", field="X", kind="column"))
         analysis = build_column_usage(self.model, report)
-        self.assertIn("Unresolved report binding Nope[X]", analysis["globalIssues"])
+        self.assertIn("Unresolved report binding Nope[X]", analysis["issues"])
+        self.assertNotIn("Unresolved report binding Nope[X]", analysis["globalIssues"])
+        count = lambda a: sum(r["decision"] == "Deletion candidate" for r in a["rows"])
+        self.assertEqual(count(analysis), count(baseline))
+
+    def test_bare_unresolved_binding_stays_global(self):
+        report = copy.deepcopy(REPORT)
+        report["pages"][0]["visuals"][0]["fields"].append(dict(table=None, field="Mystery", kind="column"))
+        analysis = build_column_usage(self.model, report)
         self.assertFalse(any(r["decision"] == "Deletion candidate" for r in analysis["rows"]))
 
     def test_unused_targets_source_is_not_blocked_by_date_issue(self):

@@ -56,17 +56,21 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
     uncertain = defaultdict(set)
     issues = set()  # global: blocks every deletion candidate
     table_issues = defaultdict(set)  # scoped: blocks only columns of the named table
+    missing_table_issues = set()  # references to tables the model lacks: reported, block nothing
 
     def add_issue(message, table_name=""):
         """Scope an issue to a model table when the reference names one.
 
         An unresolved T[F] with a known T can only point at T, so it must not
-        hold back unrelated tables. Bare or unknown-table references could
-        mean anything and stay global.
+        hold back unrelated tables. A T[F] whose T is not in the model cannot
+        depend on any column that exists, so it is reported but blocks nothing.
+        Bare references could mean anything and stay global.
         """
         home = table_lookup.get((table_name or "").casefold())
         if home:
             table_issues[home].add(message)
+        elif table_name:
+            missing_table_issues.add(message)
         else:
             issues.add(message)
 
@@ -477,7 +481,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                 "consumers": consumers,
             },
             "scope": SCOPE, "sourceNote": SOURCE_NOTE,
-            "issues": sorted(issues | {i for v in table_issues.values() for i in v}),
+            "issues": sorted(issues | missing_table_issues | {i for v in table_issues.values() for i in v}),
             "globalIssues": sorted(issues),
             "tableIssues": {t: sorted(v) for t, v in sorted(table_issues.items()) if v}}
 

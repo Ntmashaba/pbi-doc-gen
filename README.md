@@ -668,9 +668,8 @@ expressions, calculation groups and detail rows; it rejects unsupported future
 extract schemas.
 
 Run `python tests/run_ci.py` for the strict regression gate (80 tests minimum,
-no skipped tests). The GitHub Actions workflow (`docs/github-actions-ci.yml`; copy it to
-`.github/workflows/ci.yml`) runs this plus the Chromium checks on Linux, and on Windows runs the suite
-and `tests/samples/check_pbix_samples.py` over the 29 pre-extracted reports in pbi-tools/pbix-samples. For the browser
+no skipped tests). There is no CI workflow; run it locally. `tests/samples/check_pbix_samples.py`
+runs the 29 pre-extracted reports in pbi-tools/pbix-samples (see its docstring for the pinned commit). For the browser
 gate locally, install `playwright@1.62.1` with npm, install its Chromium binary,
 run `python tests/build_browser_fixture.py`, then run
 `node tests/browser_review.cjs /tmp/pbidocgen-browser.html`.
