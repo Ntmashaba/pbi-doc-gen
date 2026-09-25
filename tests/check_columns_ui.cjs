@@ -10,21 +10,22 @@ const node = id => {
     classList:{add(){},remove(){}}, setAttribute(){}});
   return nodes.get(id);
 };
-node('column-page').value = '*';
 const context = vm.createContext({console, setTimeout, document:{
   getElementById:node, querySelectorAll:()=>[]}, window:{scrollTo(){}}});
 vm.runInContext(html.match(/<script>([\s\S]*)<\/script>/)[1], context);
 const evaluate = text => vm.runInContext(text, context);
+assert.match(node('main').innerHTML, /Data sources at a glance/);  // opens on Overview
+evaluate("switchTab('columns')");
 assert.match(node('main').innerHTML, /Which columns are used/);
 assert.equal(evaluate('visibleColumns.length'), 11);
 node('column-used').value = 'Yes'; evaluate('filterColumns()');
 assert.equal(evaluate('visibleColumns.length'), 3);
 node('column-used').value = ''; node('column-assessment').value = 'Deletion candidate'; evaluate('filterColumns()');
 assert.equal(evaluate('visibleColumns.length'), 3);
-node('column-assessment').value = ''; node('column-page').value = 'p2'; evaluate('filterColumns()');
+node('column-assessment').value = ''; evaluate("pageScope = 'p2'; filterColumns()");
 assert.equal(evaluate('visibleColumns.length'), 1);
 assert.equal(evaluate('visibleColumns[0].column'), 'Amount');
-node('column-page').value = '*'; node('column-search').value = 'NetAmount'; evaluate('filterColumns()');
+evaluate("pageScope = '*'"); node('column-search').value = 'NetAmount'; evaluate('filterColumns()');
 assert.equal(evaluate('visibleColumns.length'), 2);
 evaluate("sortColumns('column')"); assert.equal(evaluate('columnSort.direction'), -1);
 node('column-search').value = 'no-such-column-xyz'; evaluate('filterColumns()');

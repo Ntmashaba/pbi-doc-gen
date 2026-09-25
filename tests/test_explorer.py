@@ -61,8 +61,9 @@ class ExplorerTests(unittest.TestCase):
                 r = copy.deepcopy(self.report) if mode != 'semantic' else None
                 p = build_payload(m, r, link(m, r) if m and r else None, mode)
                 html = render_html(p, self.root / (mode + '.html'))
-                result = subprocess.run(['node', str(Path(__file__).with_name('check_explorer_ui.cjs')), str(html)], capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for check in ('check_explorer_ui.cjs', 'check_diagrams.cjs'):
+                    result = subprocess.run(['node', str(Path(__file__).with_name(check)), str(html)], capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == '__main__':

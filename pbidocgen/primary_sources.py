@@ -3,7 +3,10 @@ from .m_sources import Tracer, materialize
 from .source_objects import source_definitions
 
 
-def build_primary_sources(model, report, source_objects, analysis_issues=None):
+def build_primary_sources(model, report, source_objects, analysis_issues=None, table_issues=None):
+    """analysis_issues block every absence-of-usage verdict; table_issues only
+    block the model table they name."""
+    table_issues = table_issues or {}
     if not model:
         return dict(rows=[], unresolved=[])
     candidates = list(source_objects)
@@ -12,6 +15,7 @@ def build_primary_sources(model, report, source_objects, analysis_issues=None):
     # Shared queries with no traced model consumer also belong in the inventory.
     # Parameters alone are not external sources, and no page usage is invented.
     tracer = Tracer(source_definitions(model))
+    known = {(r.get('sourceType'), r.get('location') or r.get('server')) for r in source_objects}
     report_name = report['name'] if report else 'Not supplied'
     for expression in model.get('expressions', []):
         name = expression['name']
@@ -21,6 +25,10 @@ def build_primary_sources(model, report, source_objects, analysis_issues=None):
         if value.kind in {'text', 'literal'} and not value.connections and not value.objects:
             continue
         for item in materialize(value):
+            if (item.get('sourceType'), item.get('location') or item.get('server')) in known:
+                # Helper queries (Combine files' Sample File / Transform Sample File)
+                # re-read a source a model table already lists.
+                continue
             candidates.append(dict(item, report=report_name, page='', pageId='',
                                    pageScope='No model consumer resolved', pageUsage='Not assessed',
                                    queryName=name, table=''))
@@ -30,7 +38,8 @@ def build_primary_sources(model, report, source_objects, analysis_issues=None):
         if item['status'] == 'Not applicable':
             continue
         origins = item.get('primaryQueries', [])
-        if not origins or item['sourceType'] == 'Unknown':
+        # Unrecognised connectors are named but still count as unresolved coverage.
+        if not origins or item['sourceType'] == 'Unknown' or item['sourceType'].endswith('(unrecognised connector)'):
             key = (item['report'], item['pageId'], item['pageScope'], item['queryName'])
             unresolved[key] = {k: item[k] for k in ('report', 'page', 'pageId', 'pageScope', 'queryName')}
             # Unknown inputs remain in the metadata export as coverage rows.
@@ -67,7 +76,7 @@ def build_primary_sources(model, report, source_objects, analysis_issues=None):
             evidence = 'Downstream model table has a possible dependency on this page' if possible_only else 'Downstream model table is referenced on this page; contribution of this external input is not proven'
         elif item['pageScope'] == 'Bookmark/report scope only':
             usage, evidence = 'Report scope only', 'Report/bookmark dependency found without a resolved individual page'
-        elif analysis_issues or item['status'] != 'Resolved':
+        elif analysis_issues or table_issues.get(item.get('table')) or item['status'] != 'Resolved':
             usage, evidence = 'Usage unresolved', 'Incomplete analysis prevents a reliable absence-of-usage assessment'
         elif not item.get('table'):
             usage, evidence = 'No model consumer found', 'No traced model partition consumes this shared query; execution is not observed'

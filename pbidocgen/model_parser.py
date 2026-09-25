@@ -24,9 +24,12 @@ from __future__ import annotations
 import json
 import re
 from .dax_lexer import mask_dax, REFERENCE
+from .legacy_mashup import is_mashup_source, location, members, section_text
 from .input_validation import validate_model
 from pathlib import Path
 from .source_inventory import enrich_source
+from .source_labels import refine_source_type, source_label
+from .partition_sources import apply_traced_sources
 
 
 # --------------------------------------------------------------------------
@@ -69,7 +72,8 @@ _M_PATTERNS = [
     ("Snowflake", re.compile(r'Snowflake\.Databases\s*\(\s*"([^"]+)"(?:\s*,\s*"([^"]+)")?', re.I), ("server", "database")),
     ("Excel workbook", re.compile(r'Excel\.Workbook\s*\(\s*File\.Contents\s*\(\s*"([^"]+)"', re.I), ("path",)),
     ("CSV file", re.compile(r'Csv\.Document\s*\(\s*File\.Contents\s*\(\s*"([^"]+)"', re.I), ("path",)),
-    ("SharePoint", re.compile(r'SharePoint\.(?:Files|Contents|Tables)\s*\(\s*"([^"]+)"', re.I), ("url",)),
+    ("SharePoint files", re.compile(r'SharePoint\.(?:Files|Contents)\s*\(\s*"([^"]+)"', re.I), ("url",)),
+    ("SharePoint list", re.compile(r'SharePoint\.Tables\s*\(\s*"([^"]+)"', re.I), ("url",)),
     ("Web", re.compile(r'Web\.Contents\s*\(\s*"([^"]+)"', re.I), ("url",)),
     ("OData", re.compile(r'OData\.Feed\s*\(\s*"([^"]+)"', re.I), ("url",)),
     ("ODBC", re.compile(r'Odbc\.(?:DataSource|Query)\s*\(\s*"([^"]+)"', re.I), ("dsn",)),
@@ -111,6 +115,8 @@ def extract_m_source(expression: str, mode: str) -> dict:
                 if val:
                     src[key if key in src else "detail"] = val
             break
+    # Same vocabulary as the M tracer (external_sources) so views agree.
+    src["sourceType"] = refine_source_type(src["sourceType"], src.get("detail"))
 
     schema_item = _ITEM_SCHEMA.search(expression)
     if schema_item:
@@ -202,11 +208,39 @@ def load_model_document(model_path: str | Path) -> tuple[dict, str, Path]:
     )
 
 
+def inline_legacy_mashups(model: dict) -> None:
+    """Replace legacy placeholder partitions (SELECT * FROM [Age] against a
+    Microsoft.PowerBI.OleDb data source) with the Power Query member they stand
+    for, and expose the section's other members as shared expressions so
+    references between queries can be traced."""
+    sources = {d.get("name"): d for d in model.get("dataSources") or [] if is_mashup_source(d)}
+    if not sources:
+        return
+    section = {}
+    for ds in sources.values():
+        for name, expression in members(section_text(ds)).items():
+            section.setdefault(name, expression)
+    used = set()
+    for tbl in model.get("tables") or []:
+        for part in tbl.get("partitions") or []:
+            src = part.get("source") or {}
+            ds = sources.get(src.get("dataSource"))
+            member = location(ds) if ds else None
+            if (src.get("type") or ("query" if "query" in src else "")) == "query" and member in section:
+                part["source"] = dict(src, type="m", expression=section[member], legacyQuery=src.get("query"))
+                used.add(member)
+    existing = {e.get("name") for e in model.get("expressions") or []}
+    extra = [{"name": n, "kind": "m", "expression": e} for n, e in section.items() if n not in used | existing]
+    if extra:
+        model["expressions"] = list(model.get("expressions") or []) + extra
+
+
 def parse_model(model_path: str | Path) -> dict:
     bim_path = Path(model_path)
     doc, source_format, bim_path = load_model_document(bim_path)
     validate_model(doc)
     model = doc.get("model", doc)
+    inline_legacy_mashups(model)
 
     tables_out: list[dict] = []
     relationships_out: list[dict] = []
@@ -277,6 +311,7 @@ def parse_model(model_path: str | Path) -> dict:
             data_source = next((d for d in model.get("dataSources", [])
                                 if d.get("name") == src.get("dataSource")), None)
             source = enrich_source(source, expression, p_mode, data_source)
+            source["label"] = source_label(source)
             partitions.append({
                 "name": part.get("name", ""),
                 "mode": part.get("mode", "import"),
@@ -527,7 +562,7 @@ def parse_model(model_path: str | Path) -> dict:
         warnings.append({"severity": "warning", "category": "Unreadable definition",
                          "message": msg})
 
-    return {
+    result = {
         "name": model.get("name") or bim_path.stem,
         "dependencyExpressions": _dependency_expressions(model),
         "expressions": [{"name": e.get("name", ""), "kind": e.get("kind", "m"),
@@ -543,6 +578,10 @@ def parse_model(model_path: str | Path) -> dict:
         "roles": roles_out,
         "warnings": warnings,
     }
+    # Replace per-partition regex guesses with the traced source where the
+    # tracer knows more (shared queries, parameters, dataflows, entered data).
+    apply_traced_sources(result)
+    return result
 
 
 def _dependency_expressions(model: dict) -> list[dict]:

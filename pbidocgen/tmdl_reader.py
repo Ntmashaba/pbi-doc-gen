@@ -56,6 +56,7 @@ _OBJECT_KEYWORDS = {
     "queryGroup", "linguisticMetadata", "dataAccessOptions", "namedExpression",
     "source", "sourceLineage", "refreshPolicy", "translations", "object",
     "calculationGroupExpression", "formatStringDefinition", "detailRowsDefinition",
+    "dataSource",
 }
 
 _PROPERTY_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$")
@@ -575,7 +576,7 @@ def read_tmdl_model(path: str | Path) -> dict:
         table_files = [f for f in sorted(definition.glob("*.tmdl"))
                        if f.name not in ("model.tmdl", "relationships.tmdl",
                                          "database.tmdl", "expressions.tmdl",
-                                         "cultures.tmdl", "roles.tmdl")]
+                                         "cultures.tmdl", "roles.tmdl", "dataSources.tmdl")]
     for file in table_files:
         for node in nodes_of(file):
             if node.keyword == "table":
@@ -607,6 +608,17 @@ def read_tmdl_model(path: str | Path) -> dict:
             if node.keyword == "role":
                 roles.append(_role_to_tmsl(node))
 
+    # ---- legacy provider data sources (pre-2019 PBIX models) --------------
+    data_sources: list[dict] = []
+    for file in [definition / "dataSources.tmdl"] + (sorted((definition / "dataSources").glob("*.tmdl"))
+                                                    if (definition / "dataSources").is_dir() else []):
+        if not file.exists():
+            continue
+        for node in nodes_of(file):
+            if node.keyword == "dataSource":
+                data_sources.append({"name": node.name, "type": node.value,
+                                     **{k: v for k, v in node.properties.items()}})
+
     # ---- shared expressions / parameters --------------------------------
     expr_files = [definition / "expressions.tmdl"]
     expr_dir = definition / "expressions"
@@ -637,6 +649,7 @@ def read_tmdl_model(path: str | Path) -> dict:
             "relationships": relationships,
             "roles": roles,
             "expressions": expressions,
+            **({"dataSources": data_sources} if data_sources else {}),
         },
         "_sourceFormat": "TMDL",
         "_sourcePath": str(definition),

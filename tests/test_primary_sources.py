@@ -41,7 +41,7 @@ class PrimarySourceTests(unittest.TestCase):
         data = self.inventory({'Final': 'let Local=Oracle.Database("host/service",[Query="SELECT * FROM HR.People"]) in Table.Combine({Stage,Local})'},
                               {'Stage': 'Teradata.Database("td",[Query="SELECT * FROM Warehouse.Sales"])'})
         self.assertEqual({(r['server'], r['object'], tuple(r['primaryQueries'])) for r in data['rows']},
-                         {('host/service', 'People', ('Final',)), ('td', 'Sales', ('Stage',))})
+                         {('host/service', 'PEOPLE', ('Final',)), ('td', 'Sales', ('Stage',))})  # Oracle folds unquoted names)
 
     def test_group_same_external_object_across_queries_and_keep_pages(self):
         code = 'Sql.Database("sql","db",[Query="SELECT * FROM dbo.Orders"])'

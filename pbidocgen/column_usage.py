@@ -21,6 +21,24 @@ SOURCE_NOTE = ("Partition source is best effort. Source column is the model inpu
                "not verified physical lineage through Power Query renames or transformations.")
 
 
+def _names_table(text: str, table: str) -> bool:
+    quoted = "'" + table.replace("'", "''") + "'"
+    return quoted.casefold() in text.casefold() or bool(
+        re.fullmatch(r"[^\W\d]\w*", table) and re.search(r"(?<![\w'])" + re.escape(table) + r"(?![\w'])", text, re.I))
+
+
+_CUSTOM_VISUAL = re.compile(r"PBI_CV_|[0-9A-Fa-f]{32}$|\d{8,}$")
+
+
+def _custom_visual(visual_type) -> bool:
+    """Custom visual types carry a GUID or timestamp; their bindings are opaque."""
+    return bool(visual_type and _CUSTOM_VISUAL.search(str(visual_type)))
+
+
+_ROW_COUNT = re.compile(r"\b(?:COUNTROWS|ISEMPTY)\s*\(\s*(?:RELATEDTABLE\s*\(\s*)?"
+                        r"(?:'(?:[^']|'')+'|[^\W\d]\w*)\s*\)?\s*\)", re.I)
+
+
 def build_column_usage(model: dict, report: dict | None) -> dict:
     tables = {t["name"]: t for t in model["tables"]}
     table_lookup = {t.casefold(): t for t in tables}
@@ -28,17 +46,41 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
     col_lookup = {(t.casefold(), c.casefold()): key for key in columns for _, t, c in [key]}
     measures = {("m", m["table"], m["name"]): m for m in model["measures"]}
     mea_lookup = {key[2].casefold(): key for key in measures}
+    by_column_name = defaultdict(list)
+    for key in columns:
+        by_column_name[key[2].casefold()].append(key)
     graph = defaultdict(set)
     table_deps = defaultdict(set)
     reasons = defaultdict(set)
+    measure_reasons = defaultdict(set)  # non-measure model roots that need a measure
     uncertain = defaultdict(set)
-    issues = set()
+    issues = set()  # global: blocks every deletion candidate
+    table_issues = defaultdict(set)  # scoped: blocks only columns of the named table
+    missing_table_issues = set()  # references to tables the model lacks: reported, block nothing
+
+    def add_issue(message, table_name=""):
+        """Scope an issue to a model table when the reference names one.
+
+        An unresolved T[F] with a known T can only point at T, so it must not
+        hold back unrelated tables. A T[F] whose T is not in the model cannot
+        depend on any column that exists, so it is reported but blocks nothing.
+        Bare references could mean anything and stay global.
+        """
+        home = table_lookup.get((table_name or "").casefold())
+        if home:
+            table_issues[home].add(message)
+        elif table_name:
+            missing_table_issues.add(message)
+        else:
+            issues.add(message)
 
     def label(key):
         return f"{key[1]}[{key[2]}]"
 
     def refs(expression, home, local_columns=False):
         text = mask_dax(expression or "")
+        # Columns the expression creates itself: ADDCOLUMNS(T, "__x", ...) then [__x].
+        local_names = {m.casefold() for m in re.findall(r'"((?:[^"]|"")+)"', expression or "")}
         found, spans = set(), []
         for match in _REF.finditer(text):
             field = match["field"].replace("]]", "]")
@@ -57,15 +99,42 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                 if local_columns:
                     key = col_lookup.get((home.casefold(), field.casefold()))
                 key = key or mea_lookup.get(field.casefold())
+                if not key and field.casefold() in local_names:
+                    spans.append(match.span())
+                    continue  # a column defined inside this expression
+                if not key:
+                    # Row context: an unqualified [col] names a column of the
+                    # table being iterated. Take the unique column with that
+                    # name, or the one in a table this expression names.
+                    candidates = by_column_name.get(field.casefold(), [])
+                    if len(candidates) > 1:
+                        candidates = [k for k in candidates if _names_table(text, k[1])] or candidates
+                    if len(candidates) > 1 and home:
+                        # DAX binds a bare [col] to the expression's own table
+                        # when that table has the column (a measure on Calculations
+                        # summing [Revenue] reads Calculations[Revenue]).
+                        candidates = [k for k in candidates if k[1].casefold() == home.casefold()] or candidates
+                    if len(candidates) == 1:
+                        key = candidates[0]
+                    elif candidates:
+                        for k in candidates:
+                            add_issue(f"Ambiguous DAX reference [{field}]", k[1])
+                        spans.append(match.span())
+                        continue
             if key:
                 found.add(key)
             else:
-                issues.add(f"Unresolved DAX reference {table}[{field}]")
+                # Calculated columns, RLS filters and calculated tables have a
+                # home table; an unresolved bare [col] there concerns that table.
+                add_issue(f"Unresolved DAX reference {table}[{field}]", table or (home if local_columns else ""))
             spans.append(match.span())
         chars = list(text)
         for start, end in spans:
             chars[start:end] = " " * (end - start)
         remainder = "".join(chars)
+        # COUNTROWS(T) / ISEMPTY(T) depend on T's rows, not its columns:
+        # removing a column never changes the count.
+        remainder = _ROW_COUNT.sub(" ", remainder)
         whole_tables = set()
         for table in tables:
             quoted = "'" + table.replace("'", "''") + "'"
@@ -120,6 +189,9 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         for dep in deps & columns.keys():
             reasons[dep].add(what)
             (used_by_measures if root[0] == "m" else used_by_calculations)[dep].add(label(root))
+        if root[0] == "c":
+            for dep in deps & measures.keys():
+                measure_reasons[dep].add(what)
         for table in whole_tables:
             for key in columns:
                 if key[1] == table:
@@ -135,6 +207,8 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
         for dep in expanded & columns.keys():
             reasons[dep].add(what)
             used_by_calculations[dep].add(what)
+        for dep in expanded & measures.keys():
+            measure_reasons[dep].add(what)
         for key in columns:
             if key[1] in whole_tables:
                 uncertain[key].add(f"Whole-table dependency in {what}")
@@ -209,8 +283,9 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
             key = col_lookup.get((table.casefold(), field))
             if key:
                 return key
-        if field:
-            issues.add(f"Unresolved report binding {binding.get('table') or '?'}[{binding.get('field')}]")
+        if field and not binding.get("runtime"):  # Q&A answers are re-derived at runtime
+            add_issue(f"Unresolved report binding {binding.get('table') or '?'}[{binding.get('field')}]",
+                      binding.get("table"))
         return None
 
     consumers = []
@@ -293,7 +368,20 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                 consume(f, [], "Bookmark: " + bookmark["name"], bookmark=True)
         if not pages:
             issues.add("No report pages parsed")
-        issues.update(w["message"] for w in report["warnings"])
+        legacy = report.get("legacyLayout")
+        # The legacy-layout caution is scoped below instead of blocking everything.
+        issues.update(w["message"] for w in report["warnings"]
+                      if w.get("severity") != "info"
+                      and not (legacy and w.get("category") == "Legacy report layout"))
+        if legacy:
+            # Bookmark fields already count as used (Keep); only their page is
+            # uncertain, which does not change a deletion decision.
+            for page in pages.values():
+                for v in page["visuals"]:
+                    if v.get("unreadableBindings") or (_custom_visual(v.get("type")) and not v["fields"]
+                                                        and v.get("unreadableBindings") is None):
+                        issues.add(f"Legacy layout: bindings of custom visual '{v.get('title') or v['type']}'"
+                                   f" on {page['name']} could not be read")
     else:
         issues.add("No report supplied; report usage is unknown")
     issues.update(w["message"] for w in model["warnings"] if w["category"] == "Unreadable definition")
@@ -302,7 +390,7 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
     for key, col in sorted(columns.items()):
         _, table, column = key
         internal = sorted(reasons[key])
-        review = sorted(uncertain[key] | issues)
+        review = sorted(uncertain[key] | table_issues[table] | issues)
         if report_use[key] or internal:
             decision = "Keep"
         elif review:
@@ -342,6 +430,11 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                              "Internal only" if internal else "Not assessed" if not report else "No references detected",
                              pageMeasures=sorted(use["measures"]) if use else [],
                              evidence=sorted(use["evidence"]) if use else sorted(report_use[key])))
+    measure_rows, measure_counts = _assess_measures(
+        measures, graph, measure_reasons, measure_page_use, report_measures,
+        report, pages, issues, table_issues, label)
+    table_assessments = _assess_tables(tables, rows, measure_rows, model["relationships"], report)
+
     # Track possible relationship dependencies separately on each real page.
     adjacency = defaultdict(set)
     for rel in model["relationships"]:
@@ -374,6 +467,8 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                                     kinds=[], evidence=[], fields=[], measures=[]))
     measure_pages = [flatten(key[1], pid, use, measure=key[2]) for key, uses in sorted(measure_page_use.items()) for pid, use in sorted(uses.items())]
     return {"rows": rows, "counts": dict(counts), "columnCount": len(columns), "csvFields": CSV_FIELDS,
+            "measures": measure_rows, "measureCounts": measure_counts, "measureCsvFields": MEASURE_CSV_FIELDS,
+            "tables": table_assessments,
             "tablePages": table_pages, "measurePages": measure_pages,
             "reportMeasures": sorted(report_measures),
             "dependencyGraph": {
@@ -385,7 +480,91 @@ def build_column_usage(model: dict, report: dict | None) -> dict:
                                            for k, deps in sorted(table_deps.items()) for t in sorted(deps)],
                 "consumers": consumers,
             },
-            "scope": SCOPE, "sourceNote": SOURCE_NOTE, "issues": sorted(issues)}
+            "scope": SCOPE, "sourceNote": SOURCE_NOTE,
+            "issues": sorted(issues | missing_table_issues | {i for v in table_issues.values() for i in v}),
+            "globalIssues": sorted(issues),
+            "tableIssues": {t: sorted(v) for t, v in sorted(table_issues.items()) if v}}
+
+
+def _assess_measures(measures, graph, measure_reasons, measure_page_use, report_measures,
+                     report, pages, issues, table_issues, label):
+    """Deletion assessment for measures, mirroring the column rules.
+
+    A measure is kept when the report reaches it (directly, via another
+    measure, or a bookmark) or when a non-measure model root needs it
+    (calculated column, RLS, calculation item, detail rows). A measure used
+    only by other unused measures is still a candidate; the note names them.
+    """
+    dependants = defaultdict(set)
+    for key, deps in graph.items():
+        for dep in deps:
+            if dep in measures and key != dep:
+                dependants[dep].add(key)
+    rows, counts = [], defaultdict(int)
+    for key, m in sorted(measures.items()):
+        _, table, name = key
+        in_report = label(key) in report_measures
+        internal = sorted(measure_reasons[key])
+        review = sorted(table_issues.get(table, set()) | issues)
+        used_by = sorted(label(k) for k in dependants[key])
+        if in_report or internal:
+            decision = "Keep"
+        elif review:
+            decision = "Review"
+        else:
+            decision = "Deletion candidate"
+        counts[decision] += 1
+        page_ids = sorted(pid for pid in measure_page_use[key] if pid)
+        if in_report:
+            reason = "Used by the supplied report."
+        elif internal:
+            reason = "Required by model dependencies."
+        elif review:
+            reason = "; ".join(review)
+        elif used_by:
+            reason = ("Referenced only by measures or calculations that the report does not use (" +
+                      ", ".join(used_by) + "). Remove them together or not at all.")
+        else:
+            reason = "No report or model references detected. Validate other reports and Excel consumers before removal."
+        rows.append(dict(
+            table=table, measure=name, decision=decision, reason=reason,
+            report=report["name"] if report else "Not supplied",
+            usedInReport="Yes" if in_report else "Not detected" if report else "Unknown",
+            pages=[pages[pid]["name"] for pid in page_ids if pid in pages], pageIds=page_ids,
+            usedBy=used_by, modelDependencies=internal, reviewNotes=review,
+            displayFolder=m.get("displayFolder") or "", expression=m.get("expression") or "",
+            scope=SCOPE))
+    return rows, dict(counts)
+
+
+def _assess_tables(tables, column_rows, measure_rows, relationships, report):
+    """Whole tables whose every column and measure is a deletion candidate."""
+    by_table = defaultdict(set)
+    for r in column_rows:
+        by_table[r["table"]].add(r["decision"])
+    for r in measure_rows:
+        by_table[r["table"]].add(r["decision"])
+    related = {rel[side] for rel in relationships for side in ("fromTable", "toTable")}
+    out = []
+    for name, tbl in sorted(tables.items()):
+        decisions = by_table.get(name, set())
+        if not report or decisions != {"Deletion candidate"} or name in related or tbl.get("calculationGroup"):
+            continue
+        sources = sorted({p["source"].get("label") or p["source"].get("sourceType") or "Unknown"
+                          for p in tbl["partitions"]})
+        out.append(dict(table=name, decision="Deletion candidate",
+                        reason="No column or measure in this table is used, and no relationship touches it.",
+                        columns=sum(1 for r in column_rows if r["table"] == name and not r["pageId"]),
+                        measures=sum(1 for r in measure_rows if r["table"] == name), sources=sources))
+    return out
+
+
+MEASURE_CSV_FIELDS = [("decision", "Deletion assessment"), ("usedInReport", "Used in report"),
+                      ("report", "Report"), ("table", "Home table"), ("measure", "Measure"),
+                      ("displayFolder", "Display folder"), ("pages", "Report pages"),
+                      ("usedBy", "Used by measures/calculations"), ("modelDependencies", "Model dependencies"),
+                      ("reason", "Assessment reason"), ("reviewNotes", "Review notes"),
+                      ("expression", "DAX expression"), ("scope", "Assessment scope")]
 
 
 CSV_FIELDS = [("decision", "Deletion assessment"), ("usedInReport", "Used in report"),

@@ -5,7 +5,10 @@ See CONNECTOR-COVERAGE.md for supported forms and limits.
 """
 import copy
 import re
+from urllib.parse import unquote
 from urllib.parse import urlsplit, urlunsplit
+
+from .source_labels import refine_source_type
 
 # Function -> external type, navigation behavior. Document readers are separate:
 # Excel.Workbook(Json.Document etc.) is not a new connection.
@@ -65,9 +68,16 @@ def external_value(tracer, fn, args):
             notes.append('Request query parameters omitted; endpoint identity only')
     if not location:
         notes.append('External location is dynamic or unresolved')
+    # Shared vocabulary with partition parsing: a SharePoint document read
+    # through Web.Contents is a file, and File.Contents is named by its type.
+    kind = refine_source_type(kind, location)
+    if kind == 'SharePoint file':
+        mode = 'file'
     if mode in {'files', 'hierarchy', 'lists'}:
         notes.append('Collection location identified; individual item selection unresolved')
     obj = re.split(r'[/\\]', location.rstrip('/\\'))[-1] if mode == 'file' and location else ''
+    if obj and location.lower().startswith(('http://', 'https://')):
+        obj = unquote(obj)  # SLA%20Targets.xlsx -> SLA Targets.xlsx
     if mode == 'endpoint':
         obj = location
     conn = dict(sourceType=kind, server=location, database='', schema='', location=location,
@@ -104,6 +114,8 @@ def navigate_external(base, fields):
         location = conn.get('location', '')
         notes.append('Filename identified but its containing folder is unresolved')
     updated = dict(conn, location=location, server=location)
+    if mode in {'files', 'hierarchy'}:
+        updated['sourceType'] = refine_source_type(conn['sourceType'], location)
     # Hierarchical Content can be either a file or another folder. Preserve the
     # selected path; a document reader will close navigation at the file boundary.
     result.connections = [updated]

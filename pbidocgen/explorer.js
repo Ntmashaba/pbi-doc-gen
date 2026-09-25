@@ -1,7 +1,7 @@
 /* Offline exploration. Source data remains immutable when a page is selected. */
 let pageScope = '*', activeTab = '', viewState = new Map();
 const expandedTables = new Set();
-let matrixQuery = '', impactQuery = '', impactNode = '', cleanupDecision = 'Deletion candidate';
+let matrixRelOnly = false, matrixQuery = '', impactQuery = '', impactNode = '', cleanupDecision = 'Deletion candidate';
 let comparison = null, comparisonName = '', comparisonError = '';
 const graph = DATA.columns?.dependencyGraph || {nodes:[],edges:[],consumers:[],wholeTableDependencies:[]};
 const graphNodes = new Map(graph.nodes.map(n=>[n.id,n]));
@@ -18,38 +18,45 @@ const action = (fn,...args) => esc(fn+'('+args.map(a=>JSON.stringify(a)).join(',
 const nodeId = (kind,table,name) => JSON.stringify([kind,table,name]);
 const listText = a => a?.length?a.map(esc).join('<br>'):'—';
 function rememberView(){
-  if(!activeTab) return;
+  if(!activeTab || activeTab==='report-details') return;
   const state={inputs:[],details:[]};
   document.querySelectorAll('#main input[id]:not([type=file]), #main select[id]').forEach(el=>{
-    if(!['global-page','column-page','table-page','impact-field','impact-search'].includes(el.id)) state.inputs.push([el.id,el.value]);
+    if(!['global-page','impact-field','impact-search'].includes(el.id)) state.inputs.push([el.id,el.value]);
   });
   document.querySelectorAll('#main details[id][open]').forEach(el=>state.details.push(el.id));
   viewState.set(activeTab,state);
 }
 function restoreView(id){
+  if(id==='report-details') return;
   const state=viewState.get(id);
   if(id==='impact'){document.getElementById('impact-field').value=impactNode;document.getElementById('impact-search').value=impactQuery;}
   for(const [key,value] of state?.inputs||[]){if(id==='impact'&&['impact-field','impact-search'].includes(key)) continue;const el=document.getElementById(key);if(el) el.value=value;}
   for(const key of state?.details||[]){const el=document.getElementById(key);if(el) el.open=true;}
-  for(const key of ['global-page','column-page','table-page']){const el=document.getElementById(key);if(el) el.value=pageScope;}
+  {const el=document.getElementById('global-page');if(el) el.value=pageScope;}
 }
 function scopeBar(id){
-  const globalViews=['overview','rels','security','warnings','cleanup'];
+  const globalViews=['overview','rels','security','warnings','cleanup','report-details'];
   const pages=[...(R?.pages||[])];
   if(id==='compare') for(const p of comparison?.report?.pages||[]) if(!pages.some(x=>x.id===p.id)) pages.push(p);
-  const note=globalViews.includes(id)?'This view covers the whole extract. Your page selection is retained for usage views.':
-    id==='compare'?'Page changes follow this selection; model changes without page usage remain visible.':
-    'Usage and CSV exports follow this selection. Deletion assessments always cover the whole extract.';
-  return `<div class="scope-bar"><div><b>Report: ${esc(R?.name||'Not supplied')}</b><div class="mut">${esc(note)}</div></div>
-    ${DATA.columns?.issues?.length?`<details><summary>Analysis coverage: ${DATA.columns.issues.length} issue(s)</summary><p>${listText(DATA.columns.issues)}</p></details>`:''}
-    <label>Report page <select id="global-page" onchange="setPageScope(this.value)">
+  if(id==='report-details') return '';
+  const whole=globalViews.includes(id);
+  const dupes=new Set(pages.map(p=>p.name).filter((n,i,a)=>a.indexOf(n)!==i));
+  const note=whole?'This view covers the whole extract':
+    id==='compare'?'Page changes follow the selected page':
+    'Usage and exports follow the selected page; deletion assessments cover the whole extract';
+  const issues=DATA.columns?.issues||[];
+  const coverage=!DATA.columns?'':issues.length
+    ?`<details class="coverage"><summary><span class="badge b-warn">${issues.length} analysis ${issues.length===1?'issue':'issues'}</span></summary><div class="coverage-pop"><b>Analysis coverage</b><p>${listText(issues)}</p></div></details>`
+    :'<span class="badge b-direct">Full analysis coverage</span>';
+  const select=R?`<label class="scope-page">Report page <select id="global-page" onchange="setPageScope(this.value)"${whole?' title="Retained for page-level views"':''}>
     <option value="*">All pages</option><option value="">No specific page</option>
-    ${pages.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} [${esc(p.id)}]${p.hidden?' · hidden':''}</option>`).join('')}</select></label></div>`;
+    ${pages.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}${dupes.has(p.name)?` [${esc(p.id)}]`:''}${p.hidden?' (hidden)':''}</option>`).join('')}</select></label>`:'';
+  return `<div class="scope-bar">${select}<span class="mut scope-note">${esc(note)}</span>${coverage}</div>`;
 }
 function setPageScope(id){
   pageScope=id;
   closeInspector();
-  switchTab(activeTab||'columns');
+  switchTab(activeTab||'overview');
 }
 function openInspector(title,html){
   let panel=document.getElementById('inspector');
@@ -85,17 +92,23 @@ function rMatrix(){
   if(pageScope==='*'||pageScope==='') slots.push({pageId:'',page:'No specific page',report:R.name});
   return `<h1>Usage matrix</h1><p class="sub">Expand a table to see its columns across individual pages. Select a cell for its evidence. A dash means no page reference was detected, not that deletion is safe.</p>
     <input id="matrix-search" class="search" value="${esc(matrixQuery)}" placeholder="Search tables or columns…" aria-label="Search usage matrix" oninput="matrixQuery=this.value;renderMatrixBody()">
-    <p class="mut">Direct = visual or filter binding · Indirect = measure, calculation or table expression · Possible = relationship or calculated-table/parameter dependency. Hidden pages are included.</p>
-    <div class="column-scroll"><table class="t matrix"><thead><tr><th>Table / column</th>${slots.map(p=>`<th>${esc(p.page)}<div class="mut">${esc(p.pageId)}</div></th>`).join('')}</tr></thead><tbody id="matrix-body">${matrixBody(slots)}</tbody></table></div>`;
+    <label class="mut"><input type="checkbox" id="matrix-rel"${matrixRelOnly?' checked':''} onchange="matrixRelOnly=this.checked;switchTab('matrix')"> Include relationship-only</label>
+    <p class="mut">Direct = visual or filter binding · Indirect = measure, calculation or table expression · Possible = calculated-table/parameter dependency${matrixRelOnly?', or an active relationship to a table used on the page':''}. Tables reached only through relationships are ${matrixRelOnly?'shown as Possible':'hidden; tick the box to show them'}. Hidden pages are included.</p>
+    <div class="column-scroll"><table class="t matrix"><thead><tr><th>Table / column</th>${slots.map(p=>`<th title="${esc(p.pageId)}">${esc(p.page)}</th>`).join('')}</tr></thead><tbody id="matrix-body">${matrixBody(slots)}</tbody></table></div>`;
 }
 function matrixBody(slots){
   return matrixRows().map(r=>`<tr><th>${r.column===null?`<button class="xl" aria-expanded="${expandedTables.has(r.table)}" onclick="${action('toggleMatrixTable',r.table)}">${expandedTables.has(r.table)?'−':'+'} ${esc(r.table)}</button>`:`<span class="matrix-column">${esc(r.column)}</span>`}</th>
     ${slots.map(p=>{
       const matches=(r.column===null?DATA.columns.tablePages:DATA.columns.rows).filter(x=>x.table===r.table&&(r.column===null||x.column===r.column)&&x.pageId===p.pageId);
-      const cell=usageCell(matches.filter(x=>r.column===null?x.kinds.length:x.evidence.length));
+      const counted=r.column===null?matches.map(matrixKinds).filter(x=>x.kinds.length):matches.filter(x=>x.evidence.length);
+      const cell=usageCell(counted);
       const label=!p.pageId&&matches.length?(matches.some(x=>x.evidence.length)?'Unassigned usage':'No page usage'):cell.label;
       return `<td class="${cell.cls}"><button class="xl" aria-label="${esc((r.column||r.table)+' on '+p.page+' ['+p.pageId+']: '+label)}" onclick="${action('inspectCell',r.table,r.column,p.pageId)}">${esc(label)}</button></td>`;
     }).join('')}</tr>`).join('')||`<tr><td colspan="${slots.length+1}">No tables match this selection.</td></tr>`;
+}
+// Relationship reachability alone says little about use, so it is opt-in.
+function matrixKinds(row){
+  return matrixRelOnly?row:{...row,kinds:row.kinds.filter(k=>k!=='Possible relationship dependency')};
 }
 function renderMatrixBody(){
   const slots=scopedPages().map(p=>({pageId:p.id,page:p.name}));
@@ -171,19 +184,72 @@ function layoutGeometry(page){
   const height=Math.max(1,Number(page.height)||0,...placed.map(v=>v.y+v.height))-top;
   return {placed,unplaced,left,top,width,height};
 }
+/* Page layout (B4): boxes coloured by visual kind, listing their fields. */
+const VISUAL_KINDS=[['Card',/card|kpi|gauge/i],['Slicer',/slicer/i],['Table',/table|matrix|pivot/i],
+  ['Chart',/chart|map|funnel|scatter|treemap|waterfall|ribbon|decomposition|keyInfluencers/i],['Text or image',/text|image|shape|button|title/i]];
+const visualKind=v=>(VISUAL_KINDS.find(([,re])=>re.test(v.type||''))||['Other'])[0];
+const KIND_CLASS={'Card':'vk-card','Slicer':'vk-slicer','Table':'vk-table','Chart':'vk-chart','Text or image':'vk-text','Other':'vk-other'};
+function visualFields(pageId,v){
+  const ids=[...new Set(graph.consumers.filter(c=>c.pageId===pageId&&c.visualId===v.id).map(c=>c.node))];
+  const nodes=ids.map(id=>graphNodes.get(id)).filter(Boolean);
+  // Same messages the analyser records, so the layout and Cleanup agree.
+  const issues=new Set(DATA.columns?.issues||[]);
+  const unresolved=v.fields.filter(f=>f.field&&issues.has(`Unresolved report binding ${f.table||'?'}[${f.field}]`));
+  return {measures:nodes.filter(n=>n.kind==='measure'),columns:nodes.filter(n=>n.kind==='column'),unresolved};
+}
+const layoutZooms=new Map();
+function zoomPageLayout(pageId,delta){
+ const zoom=delta===0?1:Math.max(.5,Math.min(3,(layoutZooms.get(pageId)||1)+delta));
+ layoutZooms.set(pageId,zoom);
+ const canvas=document.getElementById('layout-canvas-'+pageKey(pageId));
+ if(canvas)canvas.style.width=zoom*100+'%';
+ const label=document.getElementById('layout-zoom-'+pageKey(pageId));
+ if(label)label.textContent=Math.round(zoom*100)+'%';
+}
+// Untitled visuals: a readable type plus the first field ("Card · Amount"), not "cardVisual".
+const VISUAL_TYPE_NAMES={textbox:'Text box',cardVisual:'Card',card:'Card',multiRowCard:'Multi-row card',tableEx:'Table',pivotTable:'Matrix',slicer:'Slicer',advancedSlicerVisual:'Slicer',actionButton:'Button',image:'Image',shape:'Shape',basicShape:'Shape',kpi:'KPI',gauge:'Gauge',map:'Map',filledMap:'Filled map',decompositionTreeVisual:'Decomposition tree',keyDriversVisual:'Key influencers',qnaVisual:'Q&A',pageNavigator:'Page navigator',bookmarkNavigator:'Bookmark navigator',aiNarratives:'Smart narrative',esriVisual:'ArcGIS map',group:'Group',tableEx:'Table',funnel:'Funnel',treemap:'Treemap'};
+// Custom visuals carry a GUID or timestamp: PBI_CV_885E..., simpleImageEBC4..., ClusterMap1652434605854.
+const CUSTOM_VISUAL_NAMES={PowerApps:'Power Apps',FlowVisual:'Power Automate'};
+function visualTypeName(t){
+ t=String(t||'Visual');
+ if(VISUAL_TYPE_NAMES[t]) return VISUAL_TYPE_NAMES[t];
+ // Display name from the report's own custom visual package (Mapbox Visual).
+ const packaged=(typeof DATA!=='undefined'&&DATA.report&&DATA.report.customVisuals||{})[t];
+ if(packaged) return packaged+' (custom)';
+ const base=t.replace(/_?PBI_CV_[0-9A-Fa-f_]+$/,'').replace(/_?[0-9A-Fa-f]{8}_?[0-9A-Fa-f]{4}_?[0-9A-Fa-f]{4}_?[0-9A-Fa-f]{4}_?[0-9A-Fa-f]{12}$/,'').replace(/[0-9A-F]{32}$/,'').replace(/\d{8,}$/,'');
+ const custom=base!==t;
+ if(custom&&!base) return 'Custom visual';
+ const name=CUSTOM_VISUAL_NAMES[base]||base.replace(/Visual$/,'').replace(/_/g,' ').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/^./,c=>c.toUpperCase());
+ return custom?name+' (custom)':name;
+}
+function visualName(pageId,v){
+ if(v.title) return v.title;
+ const f=visualFields(pageId,v), first=f.measures[0]||f.columns[0];
+ return visualTypeName(v.type)+(first?' · '+first.name:'');
+}
 function rLayout(){
-  return `<h1>Page layout</h1><p class="sub">A schematic from saved visual positions, not rendered charts or live data. Select a visual to inspect its bindings. Hidden visuals and pages are labelled.</p>`+
+  const legend=Object.entries(KIND_CLASS).map(([k,c])=>`<span><span class="dot ${c}"></span>${esc(k)}</span>`).join('');
+  return `<h1>Page layout</h1><p class="sub">A schematic from saved visual positions, not rendered charts or live data. Boxes list the measures (Σ) and columns each visual uses; select one for its bindings and filters.</p>
+    <div class="legend">${legend}<span><span class="dot" style="border:1px dashed var(--ink3);background:transparent"></span>Hidden</span><span><span class="badge b-warn">!</span> Unresolved binding</span></div>`+
     (scopedPages().map(p=>{
       const g=layoutGeometry(p);
-      return `<div class="card"><h2>${esc(p.label||p.name)} ${p.hidden?'· hidden page':''}</h2>
-      ${g.placed.length?`<div class="page-canvas" style="aspect-ratio:${g.width}/${g.height}">${g.placed.map(v=>`<button class="visual-box${v.hidden?' hidden-visual':''}" style="left:${100*(v.x-g.left)/g.width}%;top:${100*(v.y-g.top)/g.height}%;width:${100*v.width/g.width}%;height:${100*v.height/g.height}%" title="${esc((v.title||v.type)+' ['+v.id+']')}" onclick="${action('inspectVisual',p.id,v.id)}">${esc(v.title||v.type)}<small>${esc(v.id)}${v.hidden?' · hidden':''}</small></button>`).join('')}</div>`:'<p>No usable visual coordinates in this extract.</p>'}
-      <details><summary>All visuals (${p.visuals.length}); ${g.unplaced.length} without usable coordinates</summary><div class="body">${p.visuals.map(v=>`<p><button class="xl" onclick="${action('inspectVisual',p.id,v.id)}">${esc(v.title||v.type)} [${esc(v.id)}]${v.hidden?' · hidden':''}</button></p>`).join('')}</div></details></div>`;
+      return `<div class="card"><h2 title="${esc(p.id)}">${esc(pageTitle(p))} ${p.hidden?'· hidden page':''}</h2>
+      ${g.placed.length?`<div class="erd-toolbar layout-toolbar"><span class="mut">Select a shape for details. Zoom and scroll to read small visuals.</span><div class="erd-zoom" role="group" aria-label="Zoom ${esc(p.name)}"><button aria-label="Zoom out ${esc(p.name)}" onclick="${action('zoomPageLayout',p.id,-.25)}">−</button><output id="layout-zoom-${pageKey(p.id)}" aria-live="polite">${Math.round((layoutZooms.get(p.id)||1)*100)}%</output><button aria-label="Zoom in ${esc(p.name)}" onclick="${action('zoomPageLayout',p.id,.25)}">+</button><button onclick="${action('zoomPageLayout',p.id,0)}">Fit width</button></div></div><div class="layout-viewport" tabindex="0" role="region" aria-label="${esc(p.name)} visual layout"><div id="layout-canvas-${pageKey(p.id)}" class="page-canvas" style="width:${(layoutZooms.get(p.id)||1)*100}%;aspect-ratio:${g.width}/${g.height}">${g.placed.map(v=>{
+        const f=visualFields(p.id,v), kind=visualKind(v);
+        const names=[...f.measures.map(n=>'Σ '+n.name),...f.columns.map(n=>n.name)];
+        const label=`${visualName(p.id,v)} (${kind}${v.hidden?', hidden':''})${f.unresolved.length?`, ${f.unresolved.length} unresolved binding(s)`:''}`;
+        return `<button data-page-id="${esc(p.id)}" data-visual-id="${esc(v.id)}" aria-pressed="false" class="visual-box ${KIND_CLASS[kind]}${v.hidden?' hidden-visual':''}" style="left:${100*(v.x-g.left)/g.width}%;top:${100*(v.y-g.top)/g.height}%;width:${100*v.width/g.width}%;height:${100*v.height/g.height}%" title="${esc(label+(names.length?': '+names.join(', '):''))}" aria-label="${esc(label)}" onclick="${action('inspectVisual',p.id,v.id)}">
+          <span class="vb-head">${f.unresolved.length?'<span class="badge b-warn">!</span> ':''}<b>${esc(visualName(p.id,v))}</b><small>${esc(visualTypeName(v.type))}${v.hidden?' · hidden':''}</small></span>
+          <span class="vb-fields">${names.map(esc).join('<br>')}</span></button>`;}).join('')}</div></div>`:'<p class="mut">No visuals with usable coordinates.</p>'}
+      <details><summary>All visuals (${p.visuals.length}); ${g.unplaced.length} without usable coordinates</summary><div class="body">${p.visuals.map(v=>`<p><button class="xl" onclick="${action('inspectVisual',p.id,v.id)}">${esc(visualName(p.id,v))} [${esc(v.id)}]${v.hidden?' · hidden':''}</button></p>`).join('')}</div></details></div>`;
     }).join('')||'<p>No pages in this selection.</p>');
 }
 function inspectVisual(pageId,visualId){
   const p=R?.pages.find(p=>p.id===pageId), v=p?.visuals.find(v=>v.id===visualId);if(!v) return;
+  document.querySelectorAll('.visual-box').forEach(box=>box.setAttribute('aria-pressed',String(box.dataset.pageId===pageId&&box.dataset.visualId===visualId)));
   const roots=graph.consumers.filter(c=>c.pageId===pageId&&c.visualId===visualId);
-  openInspector(v.title||v.type,`<p>${esc(p.label||p.name)} · ${esc(v.id)}${v.hidden?' · hidden':''}</p><h3>Declared bindings</h3>
+  const unresolved=visualFields(pageId,v).unresolved;
+  openInspector(visualName(p.id,v),`<p>${esc(p.name||p.label)} · ${esc(visualTypeName(v.type))} <span class="mut">(${esc(v.type)} · ${esc(v.id)})</span>${v.hidden?' · hidden':''}</p>${unresolved.length?`<p><span class="badge b-warn">Unresolved</span> ${unresolved.map(f=>esc(`${f.table||'?'}[${f.field}]`)).join(', ')} could not be matched to the model, so usage for that table is uncertain.</p>`:''}<h3>Declared bindings</h3>
     <p>${v.fields.map(f=>esc(`${f.table||'?'}[${f.field}] (${f.kind})`)).join('<br>')||'No field bindings detected.'}</p>
     <h3>Resolved fields</h3>${[...new Set(roots.map(c=>c.node))].map(id=>`<p><button class="xl" onclick="${action('inspectNode',id,pageId)}">${esc(graphNodes.get(id)?.label)}</button></p>`).join('')||'<p>No resolved model fields.</p>'}
     <h3>Visual filters</h3><p>${v.filters.map(f=>esc(`${f.table||'?'}[${f.field}] ${f.raw||''}`)).join('<br>')||'None detected'}</p>`);
@@ -193,11 +259,30 @@ function rCleanup(){
   const rows=[...new Map(cleanupRows().map(r=>[nodeId('c',r.table,r.column),r])).values()];
   return `<h1>Cleanup review</h1><p class="sub">Whole-extract assessments, independent of the page selector. ${esc(DATA.columns.scope)}</p>
     <label>Assessment <select id="cleanup-decision" class="search" onchange="cleanupDecision=this.value;switchTab('cleanup')">${['Deletion candidate','Review','Keep',''].map(d=>`<option value="${d}"${cleanupDecision===d?' selected':''}>${d||'All assessments'}</option>`).join('')}</select></label>
-    <p>${rows.length} distinct columns · <button class="xl" onclick="exportCsvFile(columnCsv(cleanupRows()),'cleanup-column-page-usage.csv')">Export evidence at column/page grain</button></p>
+    ${rCleanupTables()}<h2>Columns</h2><p>${rows.length} distinct columns · <button class="xl" onclick="exportCsvFile(columnCsv(cleanupRows()),'cleanup-column-page-usage.csv')">Export evidence at column/page grain</button></p>
     <table class="t"><thead><tr><th>Column</th><th>Assessment</th><th>Why / evidence</th><th>Pages</th></tr></thead><tbody>${rows.map(r=>{
       const pages=DATA.columns.rows.filter(x=>x.table===r.table&&x.column===r.column&&x.pageId);
       return `<tr><th><button class="xl" onclick="${action('inspectNode',nodeId('c',r.table,r.column),'*')}">${esc(r.table)}[${esc(r.column)}]</button></th><td>${esc(r.decision)}</td><td>${esc(r.reason)}<details><summary>Dependencies and review notes</summary><p>${listText(r.modelDependencies)}</p><p>${listText(r.reviewNotes)}</p></details></td><td>${pages.map(p=>esc(pageLabel(p))).join('<br>')||esc(r.pageScope)}</td></tr>`;
-    }).join('')||'<tr><td colspan="4">No columns have this assessment.</td></tr>'}</tbody></table>`;
+    }).join('')||'<tr><td colspan="4">No columns have this assessment.</td></tr>'}</tbody></table>${rCleanupMeasures()}${rDuplicateMeasures()}`;
+}
+function rDuplicateMeasures(){
+  const dup=DATA.quality?.duplicateMeasures||[];
+  if(!dup.length) return '';
+  const link=l=>{const m=/^(.*)\[(.*)\]$/.exec(l);return m?`<button class="xl" onclick="${action('inspectNode',nodeId('m',m[1],m[2]),'*')}">${esc(l)}</button>`:esc(l);};
+  return `<h2>Duplicate measures</h2><p class="sub">The same DAX saved under different names, compared after removing whitespace, comments and letter case. Keep one and repoint visuals and dependent measures before removing the others; check which one other reports use.</p>
+    <table class="t"><thead><tr><th>Measures</th><th>Match</th><th>Format strings</th><th>DAX</th></tr></thead><tbody>${dup.map(g=>`<tr><td>${g.measures.map(link).join('<br>')}</td><td>${esc(g.match)}</td><td>${g.formats.map(f=>f?`<span class="ref">${esc(f)}</span>`:'<span class="mut">none</span>').join('<br>')}</td><td><span class="path">${esc(g.expression)}</span></td></tr>`).join('')}</tbody></table>`;
+}
+function cleanupMeasureRows(){return (DATA.columns.measures||[]).filter(r=>!cleanupDecision||r.decision===cleanupDecision);}
+function rCleanupTables(){
+  const tables=(DATA.columns.tables||[]).filter(t=>!cleanupDecision||t.decision===cleanupDecision);
+  if(!tables.length) return '';
+  return `<div class="card"><b>Whole tables with no detected use</b><p>${tables.map(t=>`${esc(t.table)} (${t.columns} column(s), ${t.measures} measure(s)${t.sources.length?' · '+esc(t.sources.join('; ')):''})`).join('<br>')}</p><p class="mut">${esc(tables[0].reason)}</p></div>`;
+}
+function rCleanupMeasures(){
+  if(!DATA.columns.measures) return '';
+  const rows=cleanupMeasureRows();
+  return `<h2>Measures</h2><p>${rows.length} measures · <button class="xl" onclick="exportCsvFile(inventoryCsv(cleanupMeasureRows(),DATA.columns.measureCsvFields),'cleanup-measures.csv')">Export measure assessments</button></p>
+    <table class="t"><thead><tr><th>Measure</th><th>Assessment</th><th>Why / evidence</th><th>Pages</th></tr></thead><tbody>${rows.map(r=>`<tr><th><button class="xl" onclick="${action('inspectNode',nodeId('m',r.table,r.measure),'*')}">${esc(r.table)}[${esc(r.measure)}]</button></th><td>${esc(r.decision)}</td><td>${esc(r.reason)}${r.usedBy.length||r.modelDependencies.length||r.reviewNotes.length?`<details><summary>Dependants and review notes</summary><p>${listText(r.usedBy)}</p><p>${listText(r.modelDependencies)}</p><p>${listText(r.reviewNotes)}</p></details>`:''}</td><td>${r.pages.map(esc).join('<br>')||'No page usage detected'}</td></tr>`).join('')||'<tr><td colspan="4">No measures have this assessment.</td></tr>'}</tbody></table>`;
 }
 function csvFilename(name){
   const raw=R?.name||M?.name||DATA.title||'Power-BI';
@@ -301,7 +386,7 @@ TABS.splice(2,0,
   {id:'impact',label:'Impact inspector',group:'Start',avail:has.model});
 TABS.splice(TABS.findIndex(t=>t.id==='filters'),0,{id:'layout',label:'Page layout',group:'Report',avail:has.report});
 TABS.push({id:'cleanup',label:'Cleanup review',group:'Quality',avail:has.model},
-  {id:'compare',label:'Compare extracts',group:'Quality',avail:true});
+  {id:'compare',label:'Compare extracts',group:'Quality',avail:true,hidden:true});
 Object.assign(RENDER,{matrix:rMatrix,impact:rImpact,layout:rLayout,cleanup:rCleanup,compare:rCompare});
 
 
@@ -326,21 +411,20 @@ function rSourceObjects(){
  <button class="chip" onclick="downloadSourceObjectsCsv(false)">Export source objects CSV (no code)</button>
  <button class="chip" onclick="downloadSourceObjectsCsv()">Export source objects CSV (with code)</button></div>
  <p id="source-object-count" class="mut" aria-live="polite"></p>
- <div class="column-scroll"><table class="t"><thead><tr><th>Report / page</th><th>Model table / query</th><th>Source type</th><th>Server / connection</th><th>Database / service</th><th>Schema</th><th>Source object</th><th>Status / original code</th></tr></thead><tbody id="source-object-rows"></tbody></table></div>`;
+ <div class="column-scroll"><table class="t"><thead><tr><th>Report page</th><th>Model table / query</th><th>Source object</th><th>Status / original code</th></tr></thead><tbody id="source-object-rows"></tbody></table></div>`;
 }
 function filterSourceObjects(){
  visibleSourceObjects=sourceObjectRows(document.getElementById('source-object-search').value,document.getElementById('source-object-status').value);
  document.getElementById('source-object-count').textContent=`${visibleSourceObjects.length} source-object/page rows`;
  document.getElementById('source-object-rows').innerHTML=visibleSourceObjects.map(r=>`<tr>
- <td>${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)} · ${esc(r.pageUsage)}</div></td>
- <td>${esc(r.table)}<div class="mut">${esc(r.queryName)}</div></td><td>${esc(r.sourceType)}</td>
- <td>${esc(r.server)||'Unresolved / not supplied'}</td><td>${esc(r.database)||'Unresolved / not supplied'}</td>
- <td>${esc(r.schema)||'—'}</td><td><b>${esc(r.object)||'No object resolved'}</b></td>
+ <td title="${esc(r.pageId)}">${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageUsage)}</div></td>
+ <td>${esc(r.table)}<div class="mut">${esc(r.queryName)}</div></td>
+ <td><b>${esc(r.object)||'No object resolved'}</b><div class="mut">${esc(r.sourceType)} · ${esc(r.server)||'server unresolved'}${r.database?' / '+esc(r.database):''}${r.schema?' / '+esc(r.schema):''}</div></td>
  <td><span class="badge ${r.status==='Resolved'?'b-direct':r.status==='Not applicable'?'b-other':'b-warn'}">${esc(r.status)}</span>
  <details><summary>View source code</summary><div class="body"><b>Extraction evidence</b><p>${esc(r.evidence)}</p><p>${listText(r.notes)}</p>
  <b>Original M code</b><pre class="code">${esc(r.originalM)||'No M expression for this partition.'}</pre>
  <b>Extracted SQL</b><pre class="code">${esc(r.sql)||'No resolved native SQL text.'}</pre>
- ${r.referencedM?`<b>Referenced M queries / parameters</b><pre class="code">${esc(r.referencedM)}</pre>`:''}</div></details></td></tr>`).join('')||'<tr><td colspan="8">No source objects match this selection.</td></tr>';
+ ${r.referencedM?`<b>Referenced M queries / parameters</b><pre class="code">${esc(r.referencedM)}</pre>`:''}</div></details></td></tr>`).join('')||'<tr><td colspan="4">No source objects match this selection.</td></tr>';
 }
 function downloadSourceObjectsCsv(includeCode=true){
  const fields=includeCode?sourceObjectCsvFields:sourceObjectCsvFields.filter(([key])=>!['originalM','sql','referencedM'].includes(key));
@@ -358,8 +442,7 @@ const primarySourceCsvFields=[['report','Report'],['page','Report page'],['pageI
  ['preparationEffects','Preparation effects'],['definitionQueries','Definition queries'],['removalAssessment','Removal assessment'],['storageModes','Configured storage modes']];
 let visiblePrimarySources=[];
 function rPrimarySources(){
- return `<h1>Primary sources</h1>
- <p class="sub">External connections and source objects, traced through referenced queries. One row per report page and external input; multiple consumers are grouped. Connection queries open the external connection. Consuming model queries may use it directly, reference another query, or do both.</p>
+ return `<p class="sub">External connections and source objects, traced through referenced queries. One row per report page and external input; multiple consumers are grouped. Connection queries open the external connection. Consuming model queries may use it directly, reference another query, or do both.</p>
  <p class="mut">Includes SQL Server, Oracle, Teradata, ODBC, SharePoint files/lists, local/network files, folders, web/API, OData and Azure storage. Other connectors remain unresolved; this is not the complete Power BI connector catalogue. Shared queries with no resolved model consumer appear under “No specific page”.</p>
  <div class="filter-row"><input id="primary-source-search" class="search" style="margin:0" aria-label="Search primary sources" placeholder="Search connection, database, object or query…" oninput="filterPrimarySources()">
  <select id="primary-source-usage" class="search" style="width:auto;margin:0" aria-label="Filter primary sources by reporting usage" onchange="filterPrimarySources()"><option value="">All reporting usage</option>${['Potential reporting dependency','Possible model dependency','Report scope only','No reporting usage found','No model consumer found','Usage unresolved'].map(x=>`<option>${x}</option>`).join('')}</select>
@@ -379,7 +462,7 @@ function filterPrimarySources(){
  document.getElementById('primary-source-count').textContent=`${visiblePrimarySources.length} external-input/page rows (including unresolved coverage)`;
  document.getElementById('primary-source-coverage').innerHTML=unresolved.length?`<details><summary>${unresolved.length} query/page entries have unresolved source coverage</summary><p>These entries are retained as unresolved rows in the view and export. Known sources from partially resolved queries also remain listed. This coverage list follows the selected page, independently of search.</p><ul>${unresolved.map(r=>`<li>${esc(r.queryName)} — ${esc(r.page)||esc(r.pageScope)}</li>`).join('')}</ul></details>`:'';
  document.getElementById('primary-source-rows').innerHTML=visiblePrimarySources.map(r=>`<tr>
- <td>${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${esc(r.pageId)} · ${listText(r.pageUsage)}</div></td>
+ <td title="${esc(r.pageId)}">${esc(r.report)}<br>${esc(r.page)||esc(r.pageScope)}<div class="mut">${listText(r.pageUsage)}</div></td>
  <td>${esc(r.sourceType)}</td><td>${esc(r.server)||'Unresolved / not supplied'}</td><td>${esc(r.database)||'Unresolved / not supplied'}</td>
  <td>${esc(r.schema)||'—'}</td><td>${esc(r.object)||'Object unresolved'}<div class="mut">${esc(r.location)}</div></td><td>${listText(r.primaryQueries)}</td>
  <td>${listText(r.consumingQueries)}<div class="mut">${listText(r.tables)}</div></td><td>${esc(r.status)}</td>
@@ -390,5 +473,72 @@ function downloadPrimarySourcesCsv(){
  const rows=visiblePrimarySources.map(row=>Object.fromEntries(primarySourceCsvFields.map(([key])=>[key,singleLine(row[key])])));
  exportCsvFile(inventoryCsv(rows,primarySourceCsvFields),'primary-sources.csv');
 }
-TABS.splice(TABS.findIndex(t=>t.id==='sources'),0,{id:'primary-sources',label:'Primary sources',group:'Model',avail:has.model});
-RENDER['primary-sources']=rPrimarySources;
+/* One row per external source (B3). Pages are tags; detail opens in the inspector. */
+const USAGE_ORDER=['Usage unresolved','Potential reporting dependency','Possible model dependency','Report scope only','No reporting usage found','No model consumer found'];
+const USAGE_BADGE={'Potential reporting dependency':'b-direct','Possible model dependency':'b-poss','Report scope only':'b-viam','No reporting usage found':'b-none','No model consumer found':'b-none','Usage unresolved':'b-warn'};
+const FILE_SOURCE_TYPES=new Set(['SharePoint file','Excel workbook','CSV file','File','Azure Blob Storage','Azure Data Lake']);
+const uniq=a=>[...new Set(a.filter(Boolean))].sort();
+function sourceName(g){
+  if(FILE_SOURCE_TYPES.has(g.sourceType)) return g.object||String(g.location||'').split(/[\/\\]/).filter(Boolean).pop()||'Unresolved file';
+  // Same rule as source_labels.source_name: a dataflow is known by its entity.
+  if(/dataflow$/.test(g.sourceType)) return g.object||g.database||'Unresolved entity';
+  // A SharePoint list picked by ID: its title is not in the report.
+  if(g.sourceType==='SharePoint list'&&/^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i.test(g.object||''))
+    return `List ID ${g.object.replace(/[{}]/g,'').slice(0,8)}… (title not in report)`;
+  const obj=g.schema&&g.object?`${g.schema}.${g.object}`:g.object;
+  return [g.database,obj].filter(Boolean).join(' · ')||g.server||g.location||'Unresolved';
+}
+function sourceGroups(){
+  const groups=new Map();
+  for(const r of DATA.primarySources?.rows||[]){
+    const key=JSON.stringify([r.sourceType,r.server,r.database,r.schema,r.object,r.location]);
+    if(!groups.has(key)) groups.set(key,{key,sourceType:r.sourceType,server:r.server,database:r.database,schema:r.schema,object:r.object,location:r.location,rows:[]});
+    groups.get(key).rows.push(r);
+  }
+  return [...groups.values()].map(g=>{
+    const statuses=g.rows.map(r=>r.status), usages=g.rows.map(r=>r.reportingStatus);
+    return {...g,name:sourceName(g),
+      tables:uniq(g.rows.flatMap(r=>r.tables)),
+      primaryQueries:uniq(g.rows.flatMap(r=>r.primaryQueries)),
+      consumingQueries:uniq(g.rows.flatMap(r=>r.consumingQueries)),
+      pages:[...new Map(g.rows.filter(r=>r.pageId).map(r=>[r.pageId,r])).values()],
+      status:statuses.includes('Unresolved')?'Unresolved':statuses.includes('Partial')?'Partial':'Resolved',
+      reportingStatus:USAGE_ORDER.find(u=>usages.includes(u))||usages[0]||''};
+  }).sort((a,b)=>a.sourceType.localeCompare(b.sourceType)||a.name.localeCompare(b.name));
+}
+let visibleSourceGroups=[];
+function rSourceList(){
+  if(!(DATA.primarySources?.rows||[]).length) return '<div class="empty"><b>No external sources identified.</b></div>';
+  return `<div class="filter-row"><input id="source-search" class="search" style="margin:0" aria-label="Search sources" placeholder="Search source, server, table or query…" oninput="filterSourceList()"></div>
+  <p id="source-count" class="mut" aria-live="polite"></p>
+  <table class="t source-list"><thead><tr><th>Source</th><th>Model tables</th><th>Report pages</th><th>Reporting usage</th><th>Identification</th></tr></thead><tbody id="source-list-rows"></tbody></table>`;
+}
+function filterSourceList(){
+  const body=document.getElementById('source-list-rows');if(!body) return;
+  const q=(document.getElementById('source-search')?.value||'').trim().toLowerCase();
+  visibleSourceGroups=sourceGroups().filter(g=>g.rows.some(inPageScope)).filter(g=>!q||[g.sourceType,g.name,g.server,g.location,...g.tables,...g.primaryQueries,...g.consumingQueries].join(' ').toLowerCase().includes(q));
+  document.getElementById('source-count').textContent=`${visibleSourceGroups.length} sources`;
+  body.innerHTML=visibleSourceGroups.map(g=>`<tr><th><button class="xl" onclick="${action('inspectSource',g.key)}">${esc(g.sourceType)} · ${esc(g.name)}</button>
+    <div class="mut">${esc(g.server||g.location||'')}</div></th>
+    <td>${g.tables.map(tblLink).join(', ')||'<span class="mut">No model consumer</span>'}</td>
+    <td><div class="pill-list">${g.pages.map(p=>`<span class="tag-page">${esc(p.page)}</span>`).join('')||'<span class="mut">No page usage</span>'}</div></td>
+    <td><span class="badge ${USAGE_BADGE[g.reportingStatus]||'b-other'}">${esc(g.reportingStatus)}</span></td>
+    <td><span class="badge ${g.status==='Resolved'?'b-direct':'b-warn'}">${esc(g.status)}</span></td></tr>`).join('')||'<tr><td colspan="5">No sources match this selection.</td></tr>';
+}
+function inspectSource(key){
+  const g=sourceGroups().find(x=>x.key===key);if(!g) return;
+  const queries=uniq([...g.primaryQueries,...g.consumingQueries]);
+  const code=(DATA.sourceQueries||[]).filter(q=>queries.includes(q.queryName));
+  const sql=uniq((DATA.sourceObjects||[]).filter(o=>queries.includes(o.queryName)&&o.sql&&(!g.object||o.object===g.object||o.object===`${g.schema}.${g.object}`)).map(o=>o.sql));
+  const field=(label,value)=>value?`<tr><td class="mut">${label}</td><td>${esc(value)}</td></tr>`:'';
+  openInspector(`${g.sourceType} · ${g.name}`,`<table class="t"><tbody>${field('Type',g.sourceType)}${field('Server / connection',g.server)}${field('Database / service',g.database)}${field('Schema',g.schema)}${field('Object',g.object)}${field('File / folder / URL',g.location)}</tbody></table>
+    <p><span class="badge ${USAGE_BADGE[g.reportingStatus]||'b-other'}">${esc(g.reportingStatus)}</span> <span class="badge ${g.status==='Resolved'?'b-direct':'b-warn'}">${esc(g.status)}</span></p>
+    <p class="mut">Resolved means identified statically, not checked against a live source. Reporting usage describes the downstream model table; this input's contribution to displayed values is not proven.</p>
+    <h3>Report pages</h3><p>${g.rows.filter(inPageScope).map(r=>`${esc(pageLabel(r))}: ${esc(r.reportingStatus)}`).join('<br>')||'None'}</p>
+    <h3>Model tables</h3><p>${g.tables.map(tblLink).join(', ')||'None'}</p>
+    <h3>Queries</h3><p>Connection: ${listText(g.primaryQueries)}</p><p>Consuming: ${listText(g.consumingQueries)}</p>
+    <h3>Evidence</h3><p>${listText(uniq(g.rows.flatMap(r=>r.usageEvidence)))}</p><p>${listText(uniq(g.rows.flatMap(r=>r.preparationEffects)))}</p>
+    <p class="mut">Configured storage modes: ${listText(uniq(g.rows.flatMap(r=>r.storageModes)))}</p>
+    <h3>Code</h3>${code.map(q=>`<details><summary>M · ${esc(q.queryName)}</summary><pre class="code">${esc(q.mCode)}</pre></details>`).join('')||'<p>No M code found.</p>'}
+    ${sql.map(s=>`<details><summary>Extracted SQL</summary><pre class="code">${esc(s)}</pre></details>`).join('')}`);
+}

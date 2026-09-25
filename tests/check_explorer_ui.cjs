@@ -23,22 +23,74 @@ function mount(html){
     mounted.push(el);
   }
 }
+const historyEntries=[], listeners={};
+const browserWindow={scrollTo(){},location:{hash:''},addEventListener(name,fn){listeners[name]=fn;},history:{
+ pushState(_state,_title,hash){historyEntries.push(hash);browserWindow.location.hash=hash;},
+ replaceState(_state,_title,hash){browserWindow.location.hash=hash;}
+}};
 const context=vm.createContext({console,setTimeout,document:{getElementById:node,
  querySelectorAll:s=>s.startsWith('#main input')?mounted.filter(e=>['INPUT','SELECT'].includes(e.tagName)):[],
- createElement:()=>({}),body:{appendChild(){}}},window:{scrollTo(){}}});
+ createElement:()=>({}),body:{appendChild(){}}},window:browserWindow});
 vm.runInContext(html.match(/<script>([\s\S]*)<\/script>/)[1],context);
 const run=s=>vm.runInContext(s,context);
 const same=(a,b)=>assert.equal(JSON.stringify(a),JSON.stringify(b));
+// Sections have deep links; Back restores the prior view without adding history.
+const routeTarget=run("TABS.find(t=>t.avail&&t.id!=='overview').id");
+run(`switchTab(${JSON.stringify(routeTarget)})`);assert.equal(browserWindow.location.hash,'#'+routeTarget);
+const historyCount=historyEntries.length;
+run(`switchTab(${JSON.stringify(routeTarget)})`);assert.equal(historyEntries.length,historyCount);
+browserWindow.location.hash='#overview';listeners.popstate();
+assert.equal(run('activeTab'),'overview');assert.equal(historyEntries.length,historyCount);
+browserWindow.location.hash='#does-not-exist';listeners.popstate();assert.equal(run('activeTab'),'overview');
+assert.match(node('nav').innerHTML,/href="pbi-home.html#reports"/);
+assert.ok(!run("sectionTabs(sectionOf('compare')).some(t=>t.id==='compare')"));
+assert.equal(run("sectionOf('impact').label"),'Impact & usage');
 // Every available view must render in every supported extraction mode.
 for(const tab of run('TABS.filter(t=>t.avail).map(t=>t.id)')) run(`switchTab(${JSON.stringify(tab)})`);
 if(!run('has.model&&has.report')){console.log('Available mode views rendered');process.exit(0);}
+// Lineage draws scoped paths once, and does not invent links for decorative pages.
+run("switchTab('lineage')");
+const lineageTable=run('lineageGraph().tables[0].name');
+run(`selectLineage('t',${JSON.stringify(lineageTable)})`);
+assert.ok(run('lineageSelection(lineageGraph()).st.every(e=>e.t===lineageFocus.key)'));
+assert.ok(run('lineageSelection(lineageGraph()).tp.every(e=>e.t===lineageFocus.key)'));
+assert.match(node('lineage-selection').innerHTML,/table details/);
+run('zoomLineage(10)');assert.equal(node('lineage-zoom-label').textContent,'250%');
+run('resetLineage()');assert.equal(node('lineage-zoom-label').textContent,'100%');
+run('savedLineage=L.lineage;L.lineage=[...L.lineage,...L.lineage]');
+assert.equal(run('lineageGraph().edgesST.length'),run('new Set(savedLineage.map(r=>JSON.stringify([r.sourceLabel||[r.sourceType,r.server,r.database].filter(Boolean).join(" · ")||"Unknown source",r.table]))).size'));
+run("L.lineage=savedLineage;savedTablePages=L.tablePages;L.tablePages=[];drawLineage()");
+assert.match(node('lineage-note').innerHTML,/No table-to-page connections detected/);
+assert.match(node('lineage-note').innerHTML,/does not mean a table is safe to delete/);
+assert.equal(run('lineageGraph().edgesTP.length'),0);
+assert.doesNotMatch(node('lineage-board').innerHTML,/var\(--none\)/);
+run('L.tablePages=savedTablePages;resetLineage()');
+// Relationship focus filters details, preserves connected nodes, and bounds zoom.
+run("switchTab('rels')");
+assert.match(node('erd').innerHTML,/role="button"/);
+const focusName=run('M.relationships[0].fromTable');
+run(`focusERD(${JSON.stringify(focusName)})`);
+assert.equal(node('erd-focus').value,focusName);
+assert.match(node('erd').innerHTML,/aria-pressed="true"/);
+assert.match(node('erd-selection').innerHTML,/Showing connections/);
+run('zoomERD(10)');assert.equal(node('erd-zoom-label').textContent,'250%');
+run('zoomERD(-10)');assert.equal(node('erd-zoom-label').textContent,'50%');
+run('resetERD()');assert.equal(node('erd-zoom-label').textContent,'100%');assert.equal(node('erd-focus').value,'');
+// Same-column and self relationships remain visible; empty models have an explicit state.
+run("savedRels=M.relationships;savedTables=M.tables;M.tables=[{name:'A',tableType:'fact'},{name:'B',tableType:'fact'}];M.relationships=[{fromTable:'A',toTable:'B',isActive:false,crossFilteringBehavior:'bothDirections'},{fromTable:'A',toTable:'A',isActive:true}];drawERD()");
+assert.match(node('erd').innerHTML,/stroke="var\(--warn\)"/);assert.match(node('erd').innerHTML,/stroke-dasharray="8 6"/);
+assert.ok(!node('erd').innerHTML.includes('NaN'));
+run('M.relationships=[];drawERD()');assert.match(node('erd').innerHTML,/No relationships in this model/);
+run('M.relationships=savedRels;M.tables=savedTables;resetERD()');
 run("switchTab('columns')");node('column-search').value='Amount';run('filterColumns()');
 run("setPageScope('p2');switchTab('tables')");assert.equal(node('global-page').value,'p2');
 assert.equal(run("sourceRows('Orders').length"),1);
 run("switchTab('columns')");assert.equal(node('column-search').value,'Amount');assert.equal(run('visibleColumns.length'),1);
 assert.equal(run('visibleColumns[0].pageId'),'p2');
 run("switchTab('pages')");assert.ok(!node('main').innerHTML.includes('id="pg-70_31"'));assert.ok(node('main').innerHTML.includes('id="pg-70_32"'));
-run("switchTab('matrix');toggleMatrixTable('Sales')");assert.match(node('main').innerHTML,/matrix-column/);assert.ok(!run('rMatrix()').includes('<div class="mut">p1</div>'));
+run("switchTab('matrix');toggleMatrixTable('Sales')");assert.match(node('main').innerHTML,/matrix-column/);assert.ok(!run('rMatrix()').includes('<div class="mut">p1</div>'));assert.equal(run("matrixKinds({kinds:['Possible relationship dependency']}).kinds.length"),0);run('matrixRelOnly=true');assert.equal(run("matrixKinds({kinds:['Possible relationship dependency']}).kinds.length"),1);assert.match(run('rMatrix()'),/id="matrix-rel" checked/);run('matrixRelOnly=false');
+assert.match(run("measureVisuals(M.measures.find(m=>m.name==='Total'))"),/inspectVisual/);assert.doesNotMatch(run("measureVisuals(M.measures.find(m=>m.name==='Total'))"),/via/);
+assert.match(run("measureVisuals(M.measures.find(m=>m.name==='Base'))"),/via Total/);
 run("inspectCell('Sales','Amount','p2')");assert.match(node('inspector').innerHTML,/v1/);
 const amount='["c","Sales","Amount"]';
 same(run(`impactConsumers(${JSON.stringify(amount)}).map(c=>c.pageId)`),['p2']);
@@ -48,7 +100,7 @@ run("inspectNode(nodeId('m','Sales','Total'))");assert.match(node('inspector').i
 run("inspectVisual('p2','v1')");assert.match(node('inspector').innerHTML,/p2/);assert.match(node('inspector').innerHTML,/Resolved fields/);
 // A graph cycle must terminate and preserve shortest paths.
 run("reverseGraph.set(nodeId('m','Sales','Total'),[nodeId('m','Sales','Base')])");assert.equal(run(`downstreamPaths(${JSON.stringify(amount)}).size`),4);
-run("switchTab('cleanup')");assert.match(node('main').innerHTML,/3 distinct columns/);assert.equal(run('cleanupRows().length'),3);
+run("switchTab('cleanup')");assert.match(node('main').innerHTML,/3 distinct columns/);assert.equal(run('cleanupRows().length'),3);assert.match(node('main').innerHTML,/<h2>Measures<\/h2>/);assert.ok(run("cleanupMeasureRows().every(r=>r.decision==='Deletion candidate')"));
 run("setPageScope('');switchTab('columns')");node('column-search').value='';run('filterColumns()');assert.ok(run("visibleColumns.every(r=>r.pageId==='')"));
 run("setPageScope('*');switchTab('layout')");assert.match(node('main').innerHTML,/without usable coordinates/);
 same(run("layoutGeometry({width:100,height:100,visuals:[{x:-10,y:0,width:20,height:30},{x:null,y:0,width:20,height:30}]}).unplaced.length"),1);

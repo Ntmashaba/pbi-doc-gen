@@ -25,7 +25,9 @@ def attach_report_locations(report):
         key = (binding.get("table"), binding["field"], binding.get("kind"), binding.get("hierarchy"))
         entry = manifest.setdefault(key, {"table": binding.get("table"), "field": binding["field"],
                                          "kind": binding.get("kind"), "hierarchy": binding.get("hierarchy"),
+                                         "runtime": bool(binding.get("runtime")),
                                          "usedIn": [], "locations": []})
+        entry["runtime"] = entry["runtime"] and bool(binding.get("runtime"))
         if ref not in entry["locations"]:
             entry["locations"].append(ref)
             entry["usedIn"].append(page_label(ref) + " — " + description)
@@ -38,7 +40,8 @@ def attach_report_locations(report):
             note(f, page, f.get("level", "page"), f.get("level", "page").capitalize() + " filter or expression")
         for v in page["visuals"]:
             for f in v["fields"]:
-                note(f, page, "visual", "Visual: " + (v.get("title") or v["type"]), v["id"])
+                prefix = "Formatting rule in visual: " if f.get("context") == "formatting" else "Visual: "
+                note(f, page, "visual", prefix + (v.get("title") or v["type"]), v["id"])
         for f in report["reportFilters"] + page["filters"]:
             filter_rows.append(dict(f, **page_ref(report, page), pageLabel=page["label"]))
     if not report["pages"]:

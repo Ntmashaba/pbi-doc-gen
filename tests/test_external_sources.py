@@ -20,7 +20,8 @@ class ExternalSourceTests(unittest.TestCase):
         code = 'let S=SharePoint.Files("https://tenant.sharepoint.com/sites/BI"), B=S{[Name="Budget.xlsx",#"Folder Path"="https://tenant.sharepoint.com/sites/BI/Documents/"]}[Content], W=Excel.Workbook(B), T=W{[Item="Budget",Kind="Sheet"]}[Data] in T'
         rows = self.rows(code)
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['sourceType'], 'SharePoint files')
+        # One document picked from a library is a SharePoint file, as with Web.Contents.
+        self.assertEqual(rows[0]['sourceType'], 'SharePoint file')
         self.assertEqual(rows[0]['location'], 'https://tenant.sharepoint.com/sites/BI/Documents/Budget.xlsx')
         self.assertEqual(rows[0]['object'], 'Budget.xlsx')
         self.assertEqual(rows[0]['status'], 'Resolved')
@@ -86,7 +87,7 @@ class ExternalSourceTests(unittest.TestCase):
     def test_merge_and_removed_columns_retain_potential_input(self):
         defs = {'Lookup': 'Csv.Document(File.Contents("C:\\lookup.csv"))'}
         rows = self.rows('let S=Sql.Database("sql","db",[Query="SELECT * FROM dbo.Sales"]), J=Table.NestedJoin(S,{"ID"},Lookup,{"ID"},"L"), R=Table.RemoveColumns(J,{"L"}) in R', defs)
-        self.assertEqual({r['sourceType'] for r in rows}, {'SQL Server','File'})
+        self.assertEqual({r['sourceType'] for r in rows}, {'SQL Server','CSV file'})
         for row in rows:
             self.assertTrue(any('Merge/join' in e for e in row['preparationEffects']))
             self.assertTrue(any('Column selection' in e for e in row['preparationEffects']))
@@ -142,6 +143,8 @@ class SourceUsageTests(unittest.TestCase):
     def test_unknown_custom_connector_remains_in_export_rows(self):
         data=self.inventory(code='CustomPlatform.Fetch("account")')
         self.assertEqual(len(data['rows']), 1)
-        self.assertEqual(data['rows'][0]['sourceType'], 'Unknown')
+        # The connector is named rather than reported as Unknown, but stays unresolved.
+        self.assertEqual(data['rows'][0]['sourceType'], 'CustomPlatform.Fetch (unrecognised connector)')
+        self.assertEqual(data['rows'][0]['status'], 'Unresolved')
         self.assertEqual(data['rows'][0]['reportingStatus'], 'Usage unresolved')
         self.assertEqual(len(data['unresolved']), 1)

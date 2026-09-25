@@ -61,6 +61,15 @@ class ColumnUsageTests(unittest.TestCase):
         path.write_text(json.dumps(raw or raw_model()), encoding="utf-8")
         return parse_model(path)
 
+    def test_bare_column_in_measure_binds_to_its_own_table(self):
+        raw = {"model": {"name": "M", "tables": [
+            {"name": t, "columns": [{"name": "Revenue"}], "measures": [
+                {"name": "Total", "expression": "SUM([Revenue])"}] if t == "Calc" else []}
+            for t in ("Fact A", "Fact B", "Calc")], "relationships": []}}
+        analysis = build_column_usage(self.model(raw), None)
+        self.assertFalse([i for i in analysis["globalIssues"] if "Ambiguous" in i])
+        self.assertFalse(any(analysis.get("tableIssues", {}).values()))
+
     def rows(self, column, model=None, report=None):
         analysis = build_column_usage(model or self.model(), report or report_fixture())
         return [r for r in analysis["rows"] if r["column"] == column]
@@ -114,10 +123,14 @@ class ColumnUsageTests(unittest.TestCase):
 
     def test_whole_table_and_incomplete_analysis_are_review(self):
         raw = raw_model()
-        raw["model"]["tables"][0]["measures"].append({"name": "Rows", "expression": "COUNTROWS(Sales)"})
+        # Distinct rows depend on every column; a plain row count depends on none.
+        raw["model"]["tables"][0]["measures"].append({"name": "Rows", "expression": "COUNTROWS(DISTINCT(Sales))"})
         row = self.rows("Unused", model=self.model(raw))[0]
         self.assertEqual(row["decision"], "Review")
         self.assertTrue(any("Whole-table" in s for s in row["reviewNotes"]))
+        counted = raw_model()
+        counted["model"]["tables"][0]["measures"].append({"name": "Rows", "expression": "CALCULATE(COUNTROWS('Sales'), Sales[Region] = \"x\")"})
+        self.assertFalse(any("Whole-table" in s for s in self.rows("Unused", model=self.model(counted))[0]["reviewNotes"]))
         report = report_fixture()
         report["warnings"] = [{"message": "Could not parse visual"}]
         self.assertEqual(self.rows("Unused", report=report)[0]["decision"], "Review")

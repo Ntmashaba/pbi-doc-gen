@@ -14,11 +14,40 @@ from __future__ import annotations
 from .page_references import attach_report_locations
 
 
+def _formatting_only(entry: dict) -> bool:
+    locations = entry.get("locations") or []
+    return bool(locations) and all((l.get("description") or "").startswith("Formatting rule") for l in locations)
+
+
+def _broken(entry: dict, ref: str, reason: str) -> str:
+    if _formatting_only(entry):
+        # Only formatting uses it (a colour rule, a dynamic title): the visual
+        # still shows data, but that formatting is broken.
+        return f"A formatting rule refers to {ref}, but {reason}." + _used_on(entry)
+    return f"Report references {ref} but {reason}." + _used_on(entry)
+
+
+def _used_on(entry: dict, limit: int = 3) -> str:
+    """" Used on: Page — Visual: x; ..." so a broken binding says where to fix it."""
+    places = []
+    for loc in entry.get("locations") or []:
+        text = f"{loc.get('page') or 'No specific page'} — {loc.get('description') or loc.get('scope') or 'report'}"
+        if text not in places:
+            places.append(text)
+    if not places:
+        return ""
+    more = f" (+{len(places) - limit} more)" if len(places) > limit else ""
+    return " Used on: " + "; ".join(places[:limit]) + more + "."
+
+
 def link(model: dict, report: dict) -> dict:
     attach_report_locations(report)
     table_names = {t["name"] for t in model["tables"]}
     columns = {(t["name"], c["name"]) for t in model["tables"] for c in t["columns"]}
     measures = {m["name"]: m for m in model["measures"]}
+    # (table, hierarchy, level name) -> column: a level's name need not match its column.
+    levels = {(t["name"], h["name"], lv.get("name")): lv.get("column")
+              for t in model["tables"] for h in t.get("hierarchies", []) for lv in h.get("levelDetails", [])}
     warnings: list[dict] = []
 
     # ---- resolve every manifest entry ----------------------------------
@@ -30,6 +59,8 @@ def link(model: dict, report: dict) -> dict:
     for entry in report["manifest"]:
         table, field = entry["table"], entry["field"]
         kind = entry.get("kind")
+        if kind == "hierarchyLevel" and levels.get((table, entry.get("hierarchy"), field)):
+            field = levels[(table, entry["hierarchy"], field)]
         resolution, home = "unresolved", None
         # The report tells us whether it bound a column or a measure; trust it.
         # Only fall back to name lookup when it didn't (or the binding is stale),
@@ -48,12 +79,16 @@ def link(model: dict, report: dict) -> dict:
             resolution, home = "column", table
             used_columns.add((table, field))
             used_tables_direct.add(table)
+        elif entry.get("runtime"):
+            # Q&A visuals re-answer their question at runtime; a stale saved
+            # answer is not a broken dependency.
+            resolution, home = "runtime (Q&A)", table if table in table_names else None
         elif table in table_names:
             resolution, home = "missing field", table
             used_tables_direct.add(table)
             warnings.append({
                 "severity": "warning", "category": "Broken binding",
-                "message": f"Report references {table}[{field}] but the model has no such column or measure.",
+                "message": _broken(entry, f"{table}[{field}]", "the model has no such column or measure"),
             })
         else:
             ref = f"{table}[{field}]" if table else f"[{field}]"
@@ -61,7 +96,7 @@ def link(model: dict, report: dict) -> dict:
                       if table else "no measure with that name exists in the model")
             warnings.append({
                 "severity": "warning", "category": "Broken binding",
-                "message": f"Report references {ref} but {reason}.",
+                "message": _broken(entry, ref, reason),
             })
         resolved_manifest.append({**entry, "resolution": resolution, "homeTable": home})
 
@@ -161,6 +196,7 @@ def link(model: dict, report: dict) -> dict:
             src = part["source"]
             lineage.append({
                 "sourceType": src["sourceType"],
+                "sourceLabel": src.get("label") or src["sourceType"],
                 "server": src.get("server"),
                 "database": src.get("database"),
                 "object": src.get("object") or src.get("detail"),
