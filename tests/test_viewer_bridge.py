@@ -28,6 +28,8 @@ class ViewerBridge(unittest.TestCase):
         self.assertIn("if(ev.source!==window.parent) return;", text)
         self.assertIn('m.protocol!=="bi-doc-viewer"', text)
         self.assertIn("if(window.parent===window", text)
+        self.assertIn("if(DATA.published) return rDocumentationReadOnly();", text)
+        self.assertIn("published, read-only copy", text)
 
 
 if __name__ == "__main__":
