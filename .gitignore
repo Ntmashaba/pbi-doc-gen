@@ -7,3 +7,6 @@ pbix-samples/documentation/
 pbix-samples/*/
 # No licence to redistribute; keep locally only.
 pbix-samples/Snowflake_Usage_Sample.pbix
+build/
+*.egg-info/
+dist/

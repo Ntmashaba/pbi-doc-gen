@@ -216,5 +216,10 @@ def main(argv=None) -> int:
     return 0
 
 
+def cli() -> None:
+    """Console-script entry point; same behaviour as running this file."""
+    raise SystemExit(main())
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

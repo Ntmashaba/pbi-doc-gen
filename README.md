@@ -392,11 +392,21 @@ All renderings come from one analysis, so they cannot disagree.
 
 ## Development and testing
 
+The tool also installs as a package (standard library only, no dependencies):
+
+```
+pip install .
+pbi-doc-gen --project path/to/Sales.pbip --output docs/Sales.html
+```
+
+`pbi-doc-gen` accepts exactly the same options as `python generate_docs.py`. The
+package version is `pbidocgen.__version__`.
+
 ```
 python tests/run_ci.py
 ```
 
-This runs the full suite (163 tests at the time of writing, including checks that
+This runs the full suite (166 tests at the time of writing, including checks that
 run the generated JavaScript under Node.js when it is installed) and fails if
 tests are skipped. There is no CI workflow; run it locally.
 
