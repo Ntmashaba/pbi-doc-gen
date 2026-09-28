@@ -325,10 +325,10 @@ _COLUMN_PROPS = {
     "dataType": "dataType", "formatString": "formatString",
     "sortByColumn": "sortByColumn", "dataCategory": "dataCategory",
     "displayFolder": "displayFolder", "summarizeBy": "summarizeBy",
-    "sourceColumn": "sourceColumn",
+    "sourceColumn": "sourceColumn", "lineageTag": "lineageTag",
 }
 _MEASURE_PROPS = {
-    "formatString": "formatString", "displayFolder": "displayFolder",
+    "formatString": "formatString", "displayFolder": "displayFolder", "lineageTag": "lineageTag",
 }
 
 
@@ -359,6 +359,8 @@ def _table_to_tmsl(node: Node) -> dict:
         out["isHidden"] = True
     if node.prop("dataCategory"):
         out["dataCategory"] = node.prop("dataCategory")
+    if node.prop("lineageTag"):
+        out["lineageTag"] = _unescape_value(node.prop("lineageTag"))
 
     columns = []
     for c in node.kids("column"):

@@ -268,6 +268,7 @@ def parse_model(model_path: str | Path) -> dict:
                 "dataCategory": col.get("dataCategory"),
                 "formatString": expr_text(col.get("formatString")) or None,
                 "displayFolder": expr_text(col.get("displayFolder")) or None,
+                "lineageTag": col.get("lineageTag") or None,
             }
             columns.append(c)
             column_index[(name, c["name"])] = c
@@ -284,6 +285,7 @@ def parse_model(model_path: str | Path) -> dict:
                 "detailRowsDefinition": mea.get("detailRowsDefinition"),
                 "formatStringExpression": expr_text((mea.get("formatStringDefinition") or {}).get("expression")),
                 "table": name,
+                "lineageTag": mea.get("lineageTag") or None,
             })
             measure_index[mea.get("name", "")] = name
 
@@ -351,6 +353,7 @@ def parse_model(model_path: str | Path) -> dict:
             "partitions": partitions,
             "hierarchies": hierarchies,
             "annotations": annotations,
+            "lineageTag": tbl.get("lineageTag") or None,
         })
 
     table_names = {t["name"] for t in tables_out}

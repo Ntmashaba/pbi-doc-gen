@@ -110,8 +110,9 @@ def render_html(payload: dict, out_path: str | Path) -> Path:
         '<script type="application/json" id="pbi-documentation-metadata">' + json_script(metadata) + '</script>')
     template = template.replace('/*__DOCUMENTATION_JS__*/', TEMPLATE.with_name('report_metadata.js').read_text(encoding='utf-8'))
     blob = json.dumps(payload, ensure_ascii=False)
-    # keep the embedded JSON from terminating the script block early
-    blob = blob.replace("</", "<\\/")
+    # keep the embedded JSON from terminating the script block early or spelling
+    # another element (e.g. a second manifest); these characters only occur in strings
+    blob = blob.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     html = (template
             .replace("__TITLE__", payload["title"].replace("<", "&lt;"))
             .replace("/*__EXPLORER_CSS__*/", TEMPLATE.with_name("explorer.css").read_text(encoding="utf-8"))
