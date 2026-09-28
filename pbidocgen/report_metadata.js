@@ -60,7 +60,15 @@ function connectionTitle(c,i){
  const where=file||c.connectionName?[c.server,c.database].filter(Boolean).join(' / '):'';
  return `${c.sourceType?esc(c.sourceType)+' · ':''}${esc(name)}${where?`<div class="mut">${esc(where)}</div>`:''}`;
 }
+// Published copies (DATA.published, set by the library) are read-only: the library owns metadata edits.
+function rDocumentationReadOnly(){
+ const rows=documentation.connections.map((c,i)=>`<tr><th>${connectionTitle(c,i)}</th><td>${esc(c.username||'')}</td><td>${esc(c.authentication||'')}</td></tr>`).join('');
+ return `<h1>Report details</h1><p class="sub doc-readonly" role="note">This is a published, read-only copy. Edit document metadata in the library, or regenerate the documentation from the source.</p>
+<div class="card doc-grid"><p><strong>Original report URL or file path:</strong> ${esc(documentation.reportLocation||'Not recorded')}</p><p><strong>Catalogue folder:</strong> ${esc(documentation.folder||'Not recorded')}</p></div>
+<h2>Connections and account references</h2>
+<table class="t doc-connections"><thead><tr><th>Connection</th><th>Username / service account</th><th>Authentication</th></tr></thead><tbody>${rows||'<tr><td colspan="3">No connections recorded.</td></tr>'}</tbody></table>`;}
 function rDocumentation(){
+ if(DATA.published) return rDocumentationReadOnly();
  const rows=documentation.connections.map((c,i)=>`<tr>
   <th>${connectionTitle(c,i)}</th>
   <td>${documentationInput('Username / service account',`doc-${i}-username`,c.username,'compact')}</td>
@@ -77,6 +85,7 @@ ${documentationInput('Catalogue folder (optional, e.g. Finance / Monthly)','doc-
 <p><button class="chip" onclick="addDocumentationConnection()">Add connection reference</button></p>
 <div id="doc-savebar" class="doc-savebar"><p id="doc-status" role="status"></p><button class="primary-btn" onclick="saveDocumentationHtml()">Download updated HTML</button></div>`;}
 function saveDocumentationHtml(){
+ if(DATA.published) return;
  captureDocumentation();
  const clone=document.documentElement.cloneNode(true);
  clone.querySelector('#pbi-documentation-metadata').textContent=JSON.stringify(cleanDocumentation(documentation)).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026');
