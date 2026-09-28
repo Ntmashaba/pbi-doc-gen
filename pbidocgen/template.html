@@ -927,6 +927,52 @@ function routeReport(){
 }
 if(window.addEventListener)window.addEventListener('popstate',routeReport);
 routeReport();
+const viewerReveal = id => { if(!document.getElementById(id)) return false; requestAnimationFrame(()=>flash(id)); return true; };
+const VIEWER_VIEWS = {
+  "pbi.overview": () => { switchTab("overview"); return true; },
+  "pbi.table": a => { switchTab("tables"); return viewerReveal("tbl-"+slug(a.table)); },
+  "pbi.measure": a => { switchTab("measures"); return viewerReveal("mea-"+slug(a.measure)); },
+  "pbi.page": a => { switchTab("pages"); return viewerReveal("pg-"+pageKey(a.page)); },
+  "pbi.source": a => {
+    switchTab("sources");
+    const same = (x, y) => !y || String(x||"") === y;
+    const g = sourceGroups().find(g => same(g.server, a.server) && same(g.database, a.database) &&
+      (!a.object || a.object === g.object || a.object === (g.schema ? g.schema+"."+g.object : g.object)));
+    if(!g) return false;
+    inspectSource(g.key); return true;
+  },
+};
+/* ============================================================ library viewer bridge
+   bi-doc-viewer protocol v1. Active only when this page is framed (by the library shell).
+   Messages are accepted only from the parent window, with an exact shape; they carry a
+   per-load channel, the revision ID and a registered view ID with string arguments,
+   never HTML, scripts or URLs. */
+(function(){
+  if(window.parent===window || !window.addEventListener) return;
+  let channel = null, revision = null;
+  const str = v => typeof v==="string" && v.length>0 && v.length<=512;
+  const reply = msg => window.parent.postMessage(Object.assign({protocol:"bi-doc-viewer", version:1, channel, revision_id:revision}, msg), "*");
+  window.addEventListener("message", ev => {
+    if(ev.source!==window.parent) return;
+    const m = ev.data;
+    if(!m || typeof m!=="object" || m.protocol!=="bi-doc-viewer" || m.version!==1) return;
+    if(m.type==="hello"){
+      if(channel!==null || !str(m.channel) || !str(m.revision_id)) return;
+      channel = m.channel; revision = m.revision_id;
+      reply({type:"viewer-ready", views:Object.keys(VIEWER_VIEWS)});
+      return;
+    }
+    if(m.type!=="navigate-object" || m.channel!==channel || m.revision_id!==revision) return;
+    if(!str(m.view_id) || !Object.prototype.hasOwnProperty.call(VIEWER_VIEWS, m.view_id)) return;
+    const args = {};
+    if(m.args && typeof m.args==="object") for(const [k,v] of Object.entries(m.args)){
+      if(typeof v==="string"||typeof v==="number"||typeof v==="boolean"){ const s=String(v); if(s.length<=512) args[k]=s; }
+    }
+    let exact = false;
+    try { exact = !!VIEWER_VIEWS[m.view_id](args); } catch(e) { exact = false; }
+    reply({type:"navigated", object_id: str(m.object_id) ? m.object_id : null, exact});
+  });
+})();
 if(window.history && window.location && !window.location.hash)window.history.replaceState(null,"","#"+activeTab);
 </script>
 </body>
