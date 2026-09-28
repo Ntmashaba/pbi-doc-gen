@@ -30,6 +30,7 @@ class ViewerBridge(unittest.TestCase):
         self.assertIn("if(window.parent===window", text)
         self.assertIn("if(DATA.published) return rDocumentationReadOnly();", text)
         self.assertIn("published, read-only copy", text)
+        self.assertIn('if(window.location.hash && window.parent===window)window.history.pushState', text)
 
 
 if __name__ == "__main__":
