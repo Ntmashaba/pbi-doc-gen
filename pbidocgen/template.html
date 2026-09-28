@@ -334,7 +334,9 @@ function switchTab(id, recordHistory=true){
   closeInspector();
   activeTab = id;
   if(window.location && window.history && recordHistory && window.location.hash!=="#"+id){
-    if(window.location.hash)window.history.pushState(null,"","#"+id);
+    // Framed (library viewer, portable export): never add entries to the host page's history,
+    // or its Back button would step through tabs instead of leaving the document.
+    if(window.location.hash && window.parent===window)window.history.pushState(null,"","#"+id);
     else window.history.replaceState(null,"","#"+id);
   }
   document.title=tab.label+" · "+DATA.title;
