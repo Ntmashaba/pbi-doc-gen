@@ -154,6 +154,11 @@ def build_agent_md(payload: dict) -> str:
         honesty.append("No report was supplied — nothing here can say whether "
                        "any object is actually *used*; usage claims are out of scope.")
     if payload["mode"] == "report-only":
+        live = (report or {}).get("liveConnection")
+        if live:
+            honesty.append("The report is live-connected (DirectQuery) to "
+                           + ", ".join(x for x in (live["kind"], live["server"], live["database"]) if x)
+                           + "; its model and data sources live there and were not supplied.")
         honesty.append("No semantic model was supplied — field references are a "
                        "requirements manifest, not validated bindings.")
     if payload["mode"] == "combined":

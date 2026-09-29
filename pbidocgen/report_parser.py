@@ -426,7 +426,14 @@ def parse_report(report_path: str | Path) -> dict:
                 "fields": refs,
             })
 
+    from .live_connection import from_pbir, summary as live_summary
+    live = from_pbir(root.parent if root.name == "definition" else root)
+    if live:
+        warnings.append({"severity": "warning", "category": "External semantic model",
+                         "message": "This report is live-connected (" + live_summary(live) + "); tables, measures "
+                                    "and data sources live in that model. Supply the model to document them."})
     return attach_report_locations({
+        "liveConnection": live,
         "name": (root.parent.name if root.name == "definition" else root.name).replace(".Report", ""),
         "pages": pages_out,
         "reportFilters": report_filters,

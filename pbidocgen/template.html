@@ -469,7 +469,7 @@ function rOverview(){
 
   let modeNote = "";
   if(MODE==="semantic-only") modeNote = `<div class="card" style="border-left:3px solid var(--poss)"><b>Semantic-only mode.</b> No report was supplied, so nothing here can be called "unused" — the most this document can say is that a column or table has <i>no internal references</i> within the model itself. External reports, Excel connections, or composite models may still depend on it.</div>`;
-  if(MODE==="report-only") modeNote = `<div class="card" style="border-left:3px solid var(--poss)"><b>Report-only mode.</b> No semantic model was supplied, so field references below are <i>unresolved requirements</i>: the report demands them, but this document cannot confirm they exist, distinguish measures from columns, or trace them to a data source.</div>`;
+  if(MODE==="report-only") modeNote = `<div class="card" style="border-left:3px solid var(--poss)"><b>Report-only mode.</b> ${(R&&R.liveConnection)?`This report is live-connected (DirectQuery) to <b>${esc([R.liveConnection.kind,R.liveConnection.server,R.liveConnection.database].filter(Boolean).join(" · "))}</b>; its tables, measures and data sources live there, not in this file. `:""}No semantic model was supplied, so field references below are <i>unresolved requirements</i>: the report demands them, but this document cannot confirm they exist, distinguish measures from columns, or trace them to a data source.</div>`;
 
   return `${coupler()}
   <h1>${esc(DATA.title)}</h1>

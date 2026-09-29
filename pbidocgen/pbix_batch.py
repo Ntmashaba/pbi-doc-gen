@@ -19,6 +19,7 @@ from .custom_visuals import from_pbix as custom_visuals_from_pbix
 from .report_parser import parse_report
 from .renderer import build_payload, render_html
 from .linker import link
+from .live_connection import from_pbix as live_from_pbix, summary as live_summary
 
 
 def resolve_tool(value):
@@ -109,8 +110,18 @@ def load_extracted(folder, source, has_embedded_model):
     else:
         report = parse_extracted_report(report_root, source.stem)
     if model is None:
-        report['warnings'].append(dict(severity='warning', category='External semantic model',
-            message='No embedded semantic model was extracted. This is report-only documentation; remote model tables, measures and data sources are not available.'))
+        live = live_from_pbix(source)
+        if live:
+            report['liveConnection'] = live
+            where = live_summary(live)
+            message = ('This report is live-connected (DirectQuery to a remote semantic model): ' + where + '. '
+                       'It has no embedded model, so tables, measures and data sources live in that model and '
+                       'are not available here. Supply the model (e.g. exported via XMLA or as a .SemanticModel) '
+                       'to document them; the field manifest lists what the report needs from it.')
+        else:
+            message = ('No embedded semantic model was extracted. This is report-only documentation; '
+                       'remote model tables, measures and data sources are not available.')
+        report['warnings'].append(dict(severity='warning', category='External semantic model', message=message))
     # Custom visual display names ship inside the PBIX (Report/CustomVisuals/).
     report['customVisuals'] = {**custom_visuals_from_pbix(source), **report.get('customVisuals', {})}
     return model, report
