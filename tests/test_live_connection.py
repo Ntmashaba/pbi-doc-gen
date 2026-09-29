@@ -32,6 +32,16 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class QuotedConnectionStringTests(unittest.TestCase):
+    def test_powerbi_xmla_with_quoted_values(self):
+        # Shape taken from a public PBIR thin report (definition.pbir byConnection).
+        live = describe('Data Source="powerbi://api.powerbi.com/v1.0/myorg/Report Templates [DEV]";'
+                        'initial catalog="K201 - MonthSlicer";access mode=readonly;integrated security=ClaimsToken')
+        self.assertEqual(live['kind'], 'Power BI semantic model (XMLA endpoint)')
+        self.assertEqual(live['server'], 'powerbi://api.powerbi.com/v1.0/myorg/Report Templates [DEV]')
+        self.assertEqual(live['database'], 'K201 - MonthSlicer')
+
+
 class SourceRowAndPairingTests(unittest.TestCase):
     live = describe('Data Source=asazure://a/b;Initial Catalog=Sales')
 

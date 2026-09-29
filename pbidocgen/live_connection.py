@@ -27,7 +27,7 @@ def _pairs(connection_string):
     for part in str(connection_string or '').split(';'):
         key, sep, value = part.partition('=')
         if sep:
-            out[key.strip().lower()] = value.strip()
+            out[key.strip().lower()] = value.strip().strip('"').strip("'")
     return out
 
 
