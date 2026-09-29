@@ -25,6 +25,18 @@ def apply_traced_sources(model: dict) -> None:
     for table in model.get('tables', []):
         parts = table.get('partitions', [])
         for part in parts:
+            if part.get('type') == 'entity' and part['source'].get('sourceType') == 'DirectQuery (entity)':
+                name = (part['source'].get('expressionSource') or '').strip().strip("'")
+                rows = [r for r in materialize(tracer.named(name)) if _known(r)] if name else []
+                if rows:
+                    best = min(rows, key=lambda r: _RANK.get(r['status'], 9))
+                    entity = part['source'].get('object')
+                    part['source'] = dict(part['source'], sourceType=best['sourceType'],
+                                          server=best.get('server') or None, database=best.get('database') or None,
+                                          object=entity or best.get('object') or None, traceStatus=best['status'],
+                                          tracedFrom=[name])
+                    part['source']['label'] = source_label(part['source'])
+                continue
             if part.get('type') != 'm':
                 continue
             query_name = table['name'] if len(parts) == 1 else table['name'] + ' / ' + part['name']

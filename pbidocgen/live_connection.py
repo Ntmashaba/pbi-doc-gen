@@ -31,6 +31,16 @@ def _pairs(connection_string):
     return out
 
 
+def analysis_services_kind(server):
+    """Source type for an Analysis Services style endpoint, by its address scheme."""
+    server = str(server or '').lower()
+    if server.startswith('asazure://'):
+        return 'Azure Analysis Services'
+    if server.startswith(('powerbi://', 'pbiazure://')) or 'powerbi' in server:
+        return 'Power BI semantic model (XMLA endpoint)'
+    return 'SQL Server Analysis Services'
+
+
 def describe(connection_string='', dataset_id='', report_id='', model_id=''):
     pairs = _pairs(connection_string)
     server = pairs.get('data source') or pairs.get('server') or ''

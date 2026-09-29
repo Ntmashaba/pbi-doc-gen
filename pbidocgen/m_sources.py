@@ -158,7 +158,8 @@ CONNECTORS = {'Sql.Database': 'SQL Server', 'Sql.Databases': 'SQL Server',
               # Names shared with model_parser's patterns, so both paths agree.
               'Snowflake.Databases': 'Snowflake', 'Databricks.Catalogs': 'Databricks',
               'Databricks.Query': 'Databricks', 'Databricks.Contents': 'Databricks',
-              'AzureSql.Database': 'Azure Synapse / SQL', 'AzureSql.Databases': 'Azure Synapse / SQL'}
+              'AzureSql.Database': 'Azure Synapse / SQL', 'AzureSql.Databases': 'Azure Synapse / SQL',
+              'AnalysisServices.Database': 'Analysis Services', 'AnalysisServices.Databases': 'Analysis Services'}
 TRANSFORMS = {'Table.SelectRows', 'Table.SelectColumns', 'Table.RemoveColumns', 'Table.RenameColumns',
               'Table.TransformColumnTypes', 'Table.TransformColumns', 'Table.ReorderColumns',
               'Table.Sort', 'Table.Distinct', 'Table.Buffer', 'Table.FirstN', 'Table.LastN',
@@ -508,8 +509,11 @@ class Tracer:
         result.objects, result.connections = [], []
         kind = CONNECTORS[fn]
         server = args[0].text if args and args[0].kind == 'text' else ''
-        database = args[1].text if fn == 'Sql.Database' and len(args) > 1 and args[1].kind == 'text' else ''
+        database = args[1].text if fn in {'Sql.Database', 'AnalysisServices.Database'} and len(args) > 1 and args[1].kind == 'text' else ''
         conn = dict(sourceType=kind, server=server or '', database=database or '', schema='', primaryQuery=self.current_query)
+        if kind == 'Analysis Services':
+            from .live_connection import analysis_services_kind
+            conn['sourceType'] = analysis_services_kind(server)
         if not server:
             result.issues.append('Connection/server expression is unresolved')
         if fn.startswith('Odbc.'):
@@ -529,7 +533,7 @@ class Tracer:
             conn['database'] = server.rsplit('/', 1)[1]
         result.connections = [conn]
         result.kind = 'connection'
-        opts_index = 2 if fn == 'Sql.Database' else 1
+        opts_index = 2 if fn in {'Sql.Database', 'AnalysisServices.Database'} else 1
         if fn == 'Odbc.Query':
             return self.sql(result, args[1] if len(args) > 1 else Value())
         if len(args) > opts_index and 'Query' in args[opts_index].members:
