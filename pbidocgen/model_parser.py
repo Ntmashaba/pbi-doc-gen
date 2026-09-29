@@ -299,8 +299,14 @@ def parse_model(model_path: str | Path) -> dict:
                 # rather than expressed in M.
                 entity = src.get("entityName") or part.get("name", "")
                 schema = src.get("schemaName")
+                # An entity in DirectQuery mode reads through a shared expression
+                # (DirectQuery to Analysis Services / a published model); only
+                # Direct Lake mode is really Direct Lake. partition_sources
+                # resolves the expression to its real source.
+                direct_lake = str(part.get("mode", "")).lower() == "directlake" or not src.get("expressionSource")
                 source = {
-                    "sourceType": "Direct Lake (entity)",
+                    "sourceType": "Direct Lake (entity)" if direct_lake else "DirectQuery (entity)",
+                    "expressionSource": src.get("expressionSource"),
                     "server": None,
                     "database": src.get("expressionSource"),
                     "schema": schema,
