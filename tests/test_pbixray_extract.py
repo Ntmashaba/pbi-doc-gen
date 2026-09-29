@@ -54,5 +54,17 @@ class PbixrayExtractorTests(unittest.TestCase):
         self.assertEqual((summary['generated'], summary['failed']), (1, 0))
 
 
+    def test_command_line_matches_pbi_tools_shape(self):
+        from pbidocgen.pbixray_extract import main
+        with tempfile.TemporaryDirectory() as out:
+            target = Path(out) / 'x'
+            code = main(['extract', str(SAMPLES / 'DP500 08 Composite model.pbix'), '-extractFolder', str(target),
+                         '-modelSerialization', 'Raw'])
+            self.assertEqual(code, 0)
+            self.assertTrue((target / 'Model' / 'model.bim').is_file())
+            self.assertTrue((target / 'Report' / 'report.json').is_file())
+        self.assertEqual(main(['nonsense']), 2)
+
+
 if __name__ == '__main__':
     unittest.main()

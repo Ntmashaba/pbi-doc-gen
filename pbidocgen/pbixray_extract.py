@@ -144,3 +144,32 @@ def extract_pbix(source, destination, tool, timeout, log):
         (destination / 'Report' / 'report.json').write_text(json.dumps(layout), encoding='utf-8')
         notes.append(f"Report layout: {len(layout.get('sections') or [])} pages.")
     Path(log).write_text('\n'.join(notes) + '\n', encoding='utf-8')
+
+
+def main(argv=None):
+    """pbi-tools-compatible subset, so a caller can run this as its extraction command:
+
+        python -m pbidocgen.pbixray_extract extract FILE.pbix -extractFolder DIR [-modelSerialization Raw]
+    """
+    import sys
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) < 4 or args[0] != 'extract' or '-extractFolder' not in args:
+        print('usage: python -m pbidocgen.pbixray_extract extract FILE.pbix -extractFolder DIR', file=sys.stderr)
+        return 2
+    source = Path(args[1])
+    folder = Path(args[args.index('-extractFolder') + 1])
+    if not source.is_file():
+        print(f'error: not a file: {source}', file=sys.stderr)
+        return 2
+    try:
+        extract_pbix(source, folder, None, 0, folder.parent / 'pbixray-extract.log' if folder.parent.is_dir()
+                     else Path('pbixray-extract.log'))
+    except Exception as exc:
+        print(f'error: {type(exc).__name__}: {exc}', file=sys.stderr)
+        return 1
+    print(f'Extracted {source.name} to {folder}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
