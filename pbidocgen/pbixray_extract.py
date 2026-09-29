@@ -17,6 +17,7 @@ PARTITION_TYPE = {1: 'query', 2: 'calculated', 4: 'm', 5: 'entity'}
 MODE = {0: 'import', 1: 'directQuery', 2: 'import', 3: 'push', 4: 'dual'}
 CARDINALITY = {'M': 'many', '1': 'one'}
 INTERNAL_PREFIXES = ('H$', 'R$', 'U$')  # VertiPaq storage tables, not model tables
+AUTO_DATE_PREFIXES = ('DateTableTemplate_', 'LocalDateTable_')  # Power BI's private auto date/time tables
 
 
 def _clean(value):
@@ -60,7 +61,8 @@ def build_model(path):
             names += [n for n in frame['TableName'].tolist() if n not in described and n not in names]
     tables = []
     for name in (n for n in names if not str(n).startswith(INTERNAL_PREFIXES)):
-        t = described.get(name, {'Name': name, 'IsHidden': 0, 'Description': None, 'DataCategory': None})
+        t = described.get(name, {'Name': name, 'IsHidden': str(name).startswith(AUTO_DATE_PREFIXES),
+                                 'Description': None, 'DataCategory': None})
         cols = []
         for _, c in _where(columns, 'TableName', name).iterrows():
             if int(c['Type']) == 3:  # row number

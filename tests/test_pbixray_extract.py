@@ -33,7 +33,10 @@ class PbixrayExtractorTests(unittest.TestCase):
         modes = [p['mode'] for t in model['tables'] for p in t['partitions']]
         self.assertEqual(modes.count('directQuery'), 4)
         self.assertNotIn('dual', modes)
-        self.assertEqual(len(model['tables']), 5)
+        # five model tables plus Power BI's private auto date template, which is hidden
+        self.assertEqual(len(model['tables']), 6)
+        self.assertEqual([t['name'] for t in model['tables'] if t['isHidden']],
+                         ['DateTableTemplate_dff96084-cd3e-40b8-86fd-3a856e997fe5'])
         layout = read_layout(source)
         self.assertEqual(len(report['pages']), len(layout['sections']))
         dq = [p['source'] for t in model['tables'] for p in t['partitions'] if p['mode'] == 'directQuery']
