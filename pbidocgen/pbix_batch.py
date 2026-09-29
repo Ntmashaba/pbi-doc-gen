@@ -12,7 +12,7 @@ import time
 import zipfile
 
 from .catalog import build_catalog, read_metadata, validate_metadata, describe_html
-from .extracted_report import parse_extracted_report
+from .extracted_report import parse_extracted_report, is_legacy_layout, parse_legacy_layout
 from .model_parser import parse_model
 from .pbitools_folder import assemble, is_folder_model
 from .custom_visuals import from_pbix as custom_visuals_from_pbix
@@ -107,6 +107,9 @@ def load_extracted(folder, source, has_embedded_model):
     if (report_root / 'definition' / 'pages').is_dir() or (report_root / 'pages').is_dir():
         report = parse_report(report_root)
         report['name'] = source.stem
+    elif is_legacy_layout(report_root):
+        # A single Report/report.json holding every page (written by the pbixray extractor).
+        report = parse_legacy_layout(report_root, source.stem)
     else:
         report = parse_extracted_report(report_root, source.stem)
     if model is None:
