@@ -1,3 +1,10 @@
+> **This repository is frozen. Development continues in [bi-doc-platform](https://github.com/Ntmashaba/bi-doc-platform).**
+> The engine was imported there as [`components/power-bi`](https://github.com/Ntmashaba/bi-doc-platform/tree/main/components/power-bi) from commit
+> `0b04cf4` (this repository's last commit), and every change since lives there: fixes, new features, the
+> portable PBIX reader and the tests. Please open issues and pull requests against `bi-doc-platform`.
+> This repository stays readable and its history is unchanged, because some things still fetch files from it by
+> commit; it is not archived yet.
+
 # Power BI Documentation Generator
 
 Generates one self-contained, interactive HTML page per Power BI report: what the
