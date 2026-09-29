@@ -267,7 +267,7 @@ const TABS = [
   {id:"tables",   label:"Tables",   group:"Model", avail:has.model, count:()=>M?.tables.length},
   {id:"measures", label:"Measures", group:"Model", avail:has.model, count:()=>M?.measures.length},
   {id:"rels",     label:"Relationships", group:"Model", avail:has.model, count:()=>M?.relationships.length},
-  {id:"sources",  label:"Sources",  group:"Model", avail:has.model},
+  {id:"sources",  label:"Sources",  group:"Model", avail:has.model||!!DATA.liveSource},
   {id:"primary-sources", label:"Primary sources", group:"Model", avail:has.model, count:()=>(DATA.primarySources?.rows||[]).length||null},
   {id:"security", label:"Security", group:"Model", avail:has.model, count:()=>M?.roles.length||null},
   {id:"warnings", label:"Warnings", group:"Quality", avail:true, count:()=>allWarnings().length||null},
@@ -357,7 +357,7 @@ function switchTab(id, recordHistory=true){
   if(id==="columns") filterColumns();
   if(id==="tables") fTbl(document.getElementById("table-search").value);
   if(id==="manifest") fMan(document.getElementById("manifest-search").value);
-  if(id==="sources"){ filterSourceList(); filterSourceObjects(); }
+  if(id==="sources"&&M){ filterSourceList(); filterSourceObjects(); }
   if(id==="primary-sources") filterPrimarySources();
   if(id==="report-details") updateSaveBar();
   if(id==="measures") fMea(document.getElementById("measure-search").value);
@@ -469,7 +469,7 @@ function rOverview(){
 
   let modeNote = "";
   if(MODE==="semantic-only") modeNote = `<div class="card" style="border-left:3px solid var(--poss)"><b>Semantic-only mode.</b> No report was supplied, so nothing here can be called "unused" — the most this document can say is that a column or table has <i>no internal references</i> within the model itself. External reports, Excel connections, or composite models may still depend on it.</div>`;
-  if(MODE==="report-only") modeNote = `<div class="card" style="border-left:3px solid var(--poss)"><b>Report-only mode.</b> No semantic model was supplied, so field references below are <i>unresolved requirements</i>: the report demands them, but this document cannot confirm they exist, distinguish measures from columns, or trace them to a data source.</div>`;
+  if(MODE==="report-only") modeNote = `<div class="card" style="border-left:3px solid var(--poss)"><b>Report-only mode.</b> ${(R&&R.liveConnection)?`This report is live-connected (DirectQuery) to <b>${esc([R.liveConnection.kind,R.liveConnection.server,R.liveConnection.database].filter(Boolean).join(" · "))}</b>; its tables, measures and data sources live there, not in this file. `:""}No semantic model was supplied, so field references below are <i>unresolved requirements</i>: the report demands them, but this document cannot confirm they exist, distinguish measures from columns, or trace them to a data source.</div>`;
 
   return `${coupler()}
   <h1>${esc(DATA.title)}</h1>
@@ -879,9 +879,18 @@ function drawERD(){
 }
 
 /* ============================================================ sources */
+function rLiveSource(){
+  const S=DATA.liveSource; if(!S) return "";
+  const P=DATA.livePairing;
+  return `<h2>Live connection</h2><div class="card" style="border-left:3px solid var(--poss)">
+    <b>${esc(S.sourceType)}</b>${S.server?` · ${esc(S.server)}`:""}${S.database?` · ${esc(S.database)}`:""}
+    <div class="mut" style="margin-top:.4rem">This report reads its data from a remote model (DirectQuery / live connection) rather than embedding one. ${P?esc(P.note):"No model was supplied, so tables, measures and upstream sources are not documented."}</div>
+    ${S.location?`<div class="mut">Dataset/model id: ${esc(S.location)}</div>`:""}</div>`;
+}
 function rSources(){
+  if(!M) return `${coupler()}<h1>Data sources</h1>${rLiveSource()}`;
   // Source list first, then the page-level inventories. Primary sources has its own tab.
-  return `${coupler()}<h1>Data sources</h1>
+  return `${coupler()}<h1>Data sources</h1>${rLiveSource()}
     <p class="sub">One row per external source, traced through supported M and embedded SQL. Select a source for its connection, queries, model tables, pages and code. No database connection is made.</p>
     ${rSourceList()}
     <h2>Detailed inventories</h2>

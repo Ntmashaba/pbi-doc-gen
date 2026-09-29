@@ -77,13 +77,16 @@ def main(argv=None) -> int:
     ap.add_argument("--extract-timeout", type=int, default=600, metavar="SECONDS", help="Extraction timeout per PBIX (default: 600)")
     args = ap.parse_args(argv)
     if args.pbix_folder or args.pbix:
-        if any((args.project, args.model, args.report, args.output, args.title, args.json_out,
-                args.csv_out, args.word_out, args.agent_out is not None, args.metadata, args.catalog, args.no_hub)):
-            ap.error("PBIX mode uses --output-dir and always creates a home page; do not combine it with project/model/report or individual export options.")
+        # --model is allowed with --pbix only: it pairs a model with a live-connected report.
+        conflicts = (args.project, args.report, args.output, args.title, args.json_out,
+                     args.csv_out, args.word_out, args.agent_out is not None, args.metadata, args.catalog, args.no_hub)
+        if any(conflicts) or (args.model and not args.pbix):
+            ap.error("PBIX mode uses --output-dir and always creates a home page; do not combine it with project/report or individual export options.")
         from pbidocgen.pbix_batch import run_batch
         try:
             summary = run_batch(args.pbix_folder or args.pbix, args.output_dir,
-                                args.recursive, args.pbi_tools, args.extract_timeout)
+                                args.recursive, args.pbi_tools, args.extract_timeout,
+                                model_path=args.model)
         except (OSError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2

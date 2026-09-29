@@ -19,6 +19,7 @@ from .custom_visuals import from_pbix as custom_visuals_from_pbix
 from .report_parser import parse_report
 from .renderer import build_payload, render_html
 from .linker import link
+from .live_connection import from_pbix as live_from_pbix, summary as live_summary
 
 
 def resolve_tool(value):
@@ -109,8 +110,18 @@ def load_extracted(folder, source, has_embedded_model):
     else:
         report = parse_extracted_report(report_root, source.stem)
     if model is None:
-        report['warnings'].append(dict(severity='warning', category='External semantic model',
-            message='No embedded semantic model was extracted. This is report-only documentation; remote model tables, measures and data sources are not available.'))
+        live = live_from_pbix(source)
+        if live:
+            report['liveConnection'] = live
+            where = live_summary(live)
+            message = ('This report is live-connected (DirectQuery to a remote semantic model): ' + where + '. '
+                       'It has no embedded model, so tables, measures and data sources live in that model and '
+                       'are not available here. Supply the model (e.g. exported via XMLA or as a .SemanticModel) '
+                       'to document them; the field manifest lists what the report needs from it.')
+        else:
+            message = ('No embedded semantic model was extracted. This is report-only documentation; '
+                       'remote model tables, measures and data sources are not available.')
+        report['warnings'].append(dict(severity='warning', category='External semantic model', message=message))
     # Custom visual display names ship inside the PBIX (Report/CustomVisuals/).
     report['customVisuals'] = {**custom_visuals_from_pbix(source), **report.get('customVisuals', {})}
     return model, report
@@ -166,7 +177,7 @@ def atomic_json(path, value):
         tmp.unlink(missing_ok=True)
 
 
-def run_batch(input_path, output_dir=None, recursive=False, tool=None, timeout=600, extractor=None):
+def run_batch(input_path, output_dir=None, recursive=False, tool=None, timeout=600, extractor=None, model_path=None):
     source_root = Path(input_path).resolve()
     if source_root.is_file():
         if source_root.suffix.lower() != '.pbix':
@@ -181,6 +192,10 @@ def run_batch(input_path, output_dir=None, recursive=False, tool=None, timeout=6
         raise ValueError(f'PBIX input not found: {source_root}')
     if not sources:
         raise ValueError('No PBIX files found. Use --recursive to include subfolders.')
+    if model_path and len(sources) != 1:
+        raise ValueError('--model pairs one model with one report; use it with --pbix, not a folder')
+    if model_path and not Path(model_path).exists():
+        raise ValueError(f'Model not found: {model_path}')
     if timeout <= 0:
         raise ValueError('--extract-timeout must be greater than zero')
     executable = resolve_tool(tool) if extractor is None else tool
@@ -217,6 +232,8 @@ def run_batch(input_path, output_dir=None, recursive=False, tool=None, timeout=6
                 extracted = work / 'extracted'
                 extractor(source, extracted, executable, timeout, log)
                 model, report = load_extracted(extracted, source, has_model)
+                if model is None and model_path:
+                    model = parse_model(Path(model_path))
                 linked = link(model, report) if model else None
                 payload = build_payload(model, report, linked, source.stem)
                 payload['documentation'] = metadata
