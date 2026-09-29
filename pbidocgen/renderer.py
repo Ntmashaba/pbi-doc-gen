@@ -13,6 +13,7 @@ from .primary_sources import build_primary_sources
 from .page_references import attach_report_locations, sync_page_usage, page_feed_rows
 from .source_labels import source_label
 from .quality import build_quality
+from .live_connection import pairing as live_pairing, source_row as live_source_row
 
 TEMPLATE = Path(__file__).parent / "template.html"
 
@@ -34,7 +35,13 @@ def build_payload(model: dict | None, report: dict | None,
     primary = build_primary_sources(model, report, source_objects, (columns or {}).get("globalIssues"),
                                     (columns or {}).get("tableIssues"))
     quality = build_quality(model)
+    live = (report or {}).get("liveConnection")
+    live_pair = live_pairing(live, model)
+    if live_pair and live_pair["note"].startswith("Model supplied separately; its name"):
+        report["warnings"].append({"severity": "warning", "category": "Model pairing", "message": live_pair["note"]})
     return {
+        "liveSource": live_source_row(live) if live else None,
+        "livePairing": live_pair,
         "schemaVersion": 2,
         "title": title,
         "mode": mode,
@@ -70,6 +77,10 @@ def build_summary(model, report, columns, primary, quality=None) -> dict:
                                                    server=src.get("server") or "", database=src.get("database") or "",
                                                    location=src.get("detail") or "", tables=set()))
             entry["tables"].add(table["name"])
+    live = (report or {}).get("liveConnection")
+    if live:
+        row = live_source_row(live)
+        sources.setdefault(row["label"], dict(row, tables=set()))
     for row in (primary or {}).get("rows", []):
         if row.get("sourceType") in (None, "", "Unknown"):
             continue

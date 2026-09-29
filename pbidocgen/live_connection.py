@@ -92,3 +92,28 @@ def summary(live):
         return ''
     where = ' / '.join(x for x in (live.get('server'), live.get('database')) if x)
     return f"{live['kind']}{' — ' + where if where else ''}"
+
+
+def source_row(live):
+    """Inventory row for the remote model a live-connected report reads from."""
+    return dict(label=summary(live), sourceType=live['kind'], server=live.get('server') or '',
+                database=live.get('database') or '', location=live.get('datasetId') or live.get('modelId') or '',
+                tables=[])
+
+
+def pairing(live, model):
+    """How a separately supplied model relates to the report's live connection.
+
+    The pairing is the user's assertion; only the name is compared, so a match is
+    a hint and a mismatch a caution, never proof either way.
+    """
+    if not live or not model:
+        return None
+    names = {str(model.get('name') or '').casefold()}
+    database = (live.get('database') or '').casefold()
+    matches = bool(database) and database in names
+    note = ('Model supplied separately and paired by the user; it was not verified against the live connection.'
+            if matches or not database else
+            f"Model supplied separately; its name ({model.get('name') or 'unnamed'}) differs from the live "
+            f"connection's database ({live['database']}). Confirm it is the same model.")
+    return dict(status='Supplied separately', nameMatches=matches, note=note)

@@ -30,3 +30,25 @@ class LiveConnectionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SourceRowAndPairingTests(unittest.TestCase):
+    live = describe('Data Source=asazure://a/b;Initial Catalog=Sales')
+
+    def test_source_row_and_summary_entry(self):
+        from pbidocgen.live_connection import source_row
+        from pbidocgen.renderer import build_payload
+        self.assertEqual(source_row(self.live)['database'], 'Sales')
+        report = dict(name='R', pages=[], manifest=[], warnings=[], liveConnection=self.live,
+                      reportFilters=[], otherFields=[], bookmarks=[], customVisuals={})
+        payload = build_payload(None, report, None, 'R')
+        self.assertEqual(payload['liveSource']['sourceType'], 'Azure Analysis Services')
+        self.assertIsNone(payload['livePairing'])
+
+    def test_pairing_flags_name_mismatch(self):
+        from pbidocgen.live_connection import pairing
+        self.assertTrue(pairing(self.live, {'name': 'sales'})['nameMatches'])
+        other = pairing(self.live, {'name': 'HR'})
+        self.assertFalse(other['nameMatches'])
+        self.assertIn('differs', other['note'])
+        self.assertIsNone(pairing(None, {'name': 'x'}))

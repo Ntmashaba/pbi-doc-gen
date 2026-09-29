@@ -177,7 +177,7 @@ def atomic_json(path, value):
         tmp.unlink(missing_ok=True)
 
 
-def run_batch(input_path, output_dir=None, recursive=False, tool=None, timeout=600, extractor=None):
+def run_batch(input_path, output_dir=None, recursive=False, tool=None, timeout=600, extractor=None, model_path=None):
     source_root = Path(input_path).resolve()
     if source_root.is_file():
         if source_root.suffix.lower() != '.pbix':
@@ -192,6 +192,10 @@ def run_batch(input_path, output_dir=None, recursive=False, tool=None, timeout=6
         raise ValueError(f'PBIX input not found: {source_root}')
     if not sources:
         raise ValueError('No PBIX files found. Use --recursive to include subfolders.')
+    if model_path and len(sources) != 1:
+        raise ValueError('--model pairs one model with one report; use it with --pbix, not a folder')
+    if model_path and not Path(model_path).exists():
+        raise ValueError(f'Model not found: {model_path}')
     if timeout <= 0:
         raise ValueError('--extract-timeout must be greater than zero')
     executable = resolve_tool(tool) if extractor is None else tool
@@ -228,6 +232,8 @@ def run_batch(input_path, output_dir=None, recursive=False, tool=None, timeout=6
                 extracted = work / 'extracted'
                 extractor(source, extracted, executable, timeout, log)
                 model, report = load_extracted(extracted, source, has_model)
+                if model is None and model_path:
+                    model = parse_model(Path(model_path))
                 linked = link(model, report) if model else None
                 payload = build_payload(model, report, linked, source.stem)
                 payload['documentation'] = metadata
